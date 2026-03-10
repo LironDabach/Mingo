@@ -1,0 +1,23 @@
+{
+  "name": "mingo",
+  "version": "1.0.0",
+  "description": "Mingo is an AI meetings assitant",
+  "homepage": "https://github.com/LironDabach/Mingo#readme",
+  "bugs": {
+    "url": "https://github.com/LironDabach/Mingo/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LironDabach/Mingo.git"
+  },
+  "license": "ISC",
+  "author": "Liron Dabach | Shiran Levi | Sean Nedorez | Tal Gohar",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}
