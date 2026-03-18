@@ -1,2 +1,24 @@
 node_modules/
 .env*
+
+# Uploads and audio files
+uploads/
+*.mp3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Build artifacts
+dist/
+build/
