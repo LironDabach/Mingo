@@ -1,16 +1,17 @@
-import React, { useState, useRef } from 'react';
+import { useRef, useState } from 'react';
+import type { ChangeEvent } from 'react';
 import './TranscribePage.css';
 
 const TranscribePage = () => {
-  const [file, setFile] = useState(null);
+  const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [transcription, setTranscription] = useState('');
   const [error, setError] = useState('');
-  const [audioUrl, setAudioUrl] = useState(null);
-  const audioRef = useRef(null);
+  const [audioUrl, setAudioUrl] = useState<string>('');
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files[0];
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
     if (selectedFile && selectedFile.type === 'audio/mpeg') {
       setFile(selectedFile);
       setError('');
@@ -20,7 +21,7 @@ const TranscribePage = () => {
     } else {
       setError('Please select a valid MP3 file');
       setFile(null);
-      setAudioUrl(null);
+      setAudioUrl('');
     }
   };
 
@@ -50,7 +51,7 @@ const TranscribePage = () => {
       const data = await response.json();
       setTranscription(data.transcription || data.text);
     } catch (err) {
-      setError(err.message || 'An error occurred during transcription');
+      setError(err instanceof Error ? err.message : 'An error occurred during transcription');
     } finally {
       setLoading(false);
     }
