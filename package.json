@@ -1,32 +1,13 @@
 {
   "name": "mingo",
-  "version": "1.0.0",
-  "description": "Mingo is an AI meetings assitant",
-  "homepage": "https://github.com/LironDabach/Mingo#readme",
-  "bugs": {
-    "url": "https://github.com/LironDabach/Mingo/issues"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/LironDabach/Mingo.git"
-  },
-  "license": "ISC",
-  "author": "Liron Dabach | Shiran Levi | Sean Nedorez | Tal Gohar",
-  "type": "commonjs",
-  "main": "backend/server.js",
+  "private": true,
+  "workspaces": ["backend", "frontend"],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node backend/server.js",
-    "dev": "nodemon backend/server.js"
-  },
-  "dependencies": {
-    "express": "^5.2.1",
-    "multer": "^1.4.5-lts.1",
-    "form-data": "^4.0.0",
-    "node-fetch": "^2.7.0",
-    "dotenv": "^16.3.1"
+    "dev:backend": "npm run dev -w backend",
+    "dev:frontend": "npm run dev -w frontend",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\""
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "concurrently": "^8.0.0"
   }
 }
