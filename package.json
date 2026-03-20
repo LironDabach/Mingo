@@ -1,7 +1,10 @@
 {
   "name": "mingo",
   "private": true,
-  "workspaces": ["backend", "frontend"],
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
   "scripts": {
     "dev:backend": "npm run dev -w backend",
     "dev:frontend": "npm run dev -w frontend",
@@ -9,5 +12,14 @@
   },
   "devDependencies": {
     "concurrently": "^8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LironDabach/Mingo.git"
+  },
+  "author": "Liron Dabach | Shiran Levi | Sean Nedorez | Tal Gohar",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/users/LironDabach/projects/2/views/1"
   }
 }
