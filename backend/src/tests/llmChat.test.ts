@@ -1,12 +1,12 @@
 /// <reference types="jest" />
 
 import { Response } from "express";
-import llmChatController from "../controllers/llmChatController";
-import llmChatModel from "../models/llmChatModel";
+import mingoAgentController from "../controllers/mingoAgentController";
+import mingoAgentModel from "../models/mingoAgentModel";
 import mingoAgentService from "../services/LLM/mingoAgentService";
 import { AuthRequest } from "../middleware/authMiddleware";
 
-jest.mock("../models/llmChatModel", () => ({
+jest.mock("../models/mingoAgentModel", () => ({
   __esModule: true,
   default: {
     findOne: jest.fn(),
@@ -18,6 +18,7 @@ jest.mock("../services/LLM/mingoAgentService", () => ({
   default: {
     generateReply: jest.fn(),
     generateSummary: jest.fn(),
+    generateTopics: jest.fn(),
   },
 }));
 
@@ -27,13 +28,14 @@ type MockResponse = Response & {
   send: jest.Mock;
 };
 
-const mockedLlmChatModel = llmChatModel as unknown as {
+const mockedmingoAgentModel = mingoAgentModel as unknown as {
   findOne: jest.Mock;
 };
 
 const mockedMingoAgentService = mingoAgentService as unknown as {
   generateReply: jest.Mock;
   generateSummary: jest.Mock;
+  generateTopics: jest.Mock;
 };
 
 const createMockResponse = () => {
@@ -44,14 +46,13 @@ const createMockResponse = () => {
   return res;
 };
 
-const createAuthRequest = (
-  overrides: Partial<AuthRequest> = {},
-) => ({
-  params: {},
-  body: {},
-  headers: {},
-  ...overrides,
-}) as AuthRequest;
+const createAuthRequest = (overrides: Partial<AuthRequest> = {}) =>
+  ({
+    params: {},
+    body: {},
+    headers: {},
+    ...overrides,
+  }) as AuthRequest;
 
 describe("LLM Chat controller", () => {
   let consoleErrorSpy: jest.SpyInstance;
@@ -70,11 +71,13 @@ describe("LLM Chat controller", () => {
       const req = createAuthRequest();
       const res = createMockResponse();
 
-      await llmChatController.getByMeetingId(req, res);
+      await mingoAgentController.getByMeetingId(req, res);
 
-      expect(mockedLlmChatModel.findOne).not.toHaveBeenCalled();
+      expect(mockedmingoAgentModel.findOne).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({ error: "Meeting ID is required" });
+      expect(res.json).toHaveBeenCalledWith({
+        error: "Meeting ID is required",
+      });
     });
 
     it("returns the meeting chat when one exists", async () => {
@@ -83,15 +86,15 @@ describe("LLM Chat controller", () => {
         meetingID: "meeting-1",
         messages: [{ sender: "user", content: "What was decided?" }],
       };
-      mockedLlmChatModel.findOne.mockResolvedValue(chat);
+      mockedmingoAgentModel.findOne.mockResolvedValue(chat);
       const req = createAuthRequest({
         params: { meetingId: "meeting-1" },
       });
       const res = createMockResponse();
 
-      await llmChatController.getByMeetingId(req, res);
+      await mingoAgentController.getByMeetingId(req, res);
 
-      expect(mockedLlmChatModel.findOne).toHaveBeenCalledWith({
+      expect(mockedmingoAgentModel.findOne).toHaveBeenCalledWith({
         meetingID: "meeting-1",
       });
       expect(res.json).toHaveBeenCalledWith(chat);
@@ -99,13 +102,13 @@ describe("LLM Chat controller", () => {
     });
 
     it("returns 500 when the chat lookup fails", async () => {
-      mockedLlmChatModel.findOne.mockRejectedValue(new Error("db failure"));
+      mockedmingoAgentModel.findOne.mockRejectedValue(new Error("db failure"));
       const req = createAuthRequest({
         params: { meetingId: "meeting-1" },
       });
       const res = createMockResponse();
 
-      await llmChatController.getByMeetingId(req, res);
+      await mingoAgentController.getByMeetingId(req, res);
 
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.send).toHaveBeenCalledWith(
@@ -121,11 +124,13 @@ describe("LLM Chat controller", () => {
       });
       const res = createMockResponse();
 
-      await llmChatController.generateReply(req, res);
+      await mingoAgentController.generateReply(req, res);
 
       expect(mockedMingoAgentService.generateReply).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({ error: "Meeting ID is required" });
+      expect(res.json).toHaveBeenCalledWith({
+        error: "Meeting ID is required",
+      });
     });
 
     it("returns 400 when message is missing", async () => {
@@ -135,7 +140,7 @@ describe("LLM Chat controller", () => {
       });
       const res = createMockResponse();
 
-      await llmChatController.generateReply(req, res);
+      await mingoAgentController.generateReply(req, res);
 
       expect(mockedMingoAgentService.generateReply).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(400);
@@ -152,7 +157,7 @@ describe("LLM Chat controller", () => {
       });
       const res = createMockResponse();
 
-      await llmChatController.generateReply(req, res);
+      await mingoAgentController.generateReply(req, res);
 
       expect(mockedMingoAgentService.generateReply).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(400);
@@ -172,7 +177,7 @@ describe("LLM Chat controller", () => {
       });
       const res = createMockResponse();
 
-      await llmChatController.generateReply(req, res);
+      await mingoAgentController.generateReply(req, res);
 
       expect(mockedMingoAgentService.generateReply).toHaveBeenCalledWith(
         "meeting-1",
@@ -194,7 +199,7 @@ describe("LLM Chat controller", () => {
       });
       const res = createMockResponse();
 
-      await llmChatController.generateReply(req, res);
+      await mingoAgentController.generateReply(req, res);
 
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.send).toHaveBeenCalledWith(
@@ -208,23 +213,26 @@ describe("LLM Chat controller", () => {
       const req = createAuthRequest();
       const res = createMockResponse();
 
-      await llmChatController.generateSummary(req, res);
+      await mingoAgentController.generateSummary(req, res);
 
       expect(mockedMingoAgentService.generateSummary).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({ error: "Meeting ID is required" });
+      expect(res.json).toHaveBeenCalledWith({
+        error: "Meeting ID is required",
+      });
     });
 
     it("returns the generated summary", async () => {
       mockedMingoAgentService.generateSummary.mockResolvedValue({
-        summary: "The meeting covered budget status, assigned follow-ups, and agreed on Friday delivery.",
+        summary:
+          "The meeting covered budget status, assigned follow-ups, and agreed on Friday delivery.",
       });
       const req = createAuthRequest({
         params: { meetingId: "meeting-1" },
       });
       const res = createMockResponse();
 
-      await llmChatController.generateSummary(req, res);
+      await mingoAgentController.generateSummary(req, res);
 
       expect(mockedMingoAgentService.generateSummary).toHaveBeenCalledWith(
         "meeting-1",
@@ -245,11 +253,63 @@ describe("LLM Chat controller", () => {
       });
       const res = createMockResponse();
 
-      await llmChatController.generateSummary(req, res);
+      await mingoAgentController.generateSummary(req, res);
 
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.send).toHaveBeenCalledWith(
         "Error: Can't generate summary for the meeting",
+      );
+    });
+  });
+
+  describe("generateTopics", () => {
+    it("returns 400 when meetingId is missing", async () => {
+      const req = createAuthRequest();
+      const res = createMockResponse();
+
+      await mingoAgentController.generateTopics(req, res);
+
+      expect(mockedMingoAgentService.generateTopics).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        error: "Meeting ID is required",
+      });
+    });
+
+    it("returns the generated topics", async () => {
+      mockedMingoAgentService.generateTopics.mockResolvedValue({
+        topics: ["Budget", "Timeline", "Action items"],
+      });
+      const req = createAuthRequest({
+        params: { meetingId: "meeting-1" },
+      });
+      const res = createMockResponse();
+
+      await mingoAgentController.generateTopics(req, res);
+
+      expect(mockedMingoAgentService.generateTopics).toHaveBeenCalledWith(
+        "meeting-1",
+      );
+      expect(res.json).toHaveBeenCalledWith({
+        topics: ["Budget", "Timeline", "Action items"],
+      });
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it("returns 500 when the topics generation fails", async () => {
+      mockedMingoAgentService.generateTopics.mockRejectedValue(
+        new Error("topics failure"),
+      );
+      const req = createAuthRequest({
+        params: { meetingId: "meeting-1" },
+      });
+      const res = createMockResponse();
+
+      await mingoAgentController.generateTopics(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.send).toHaveBeenCalledWith(
+        "Error: Can't generate topics for the meeting",
       );
     });
   });
