@@ -21,6 +21,11 @@ Natali Fridman
 
 ---
 
+# 🎨 Figma Design
+https://www.figma.com/design/PZwBOtFnZjefUpEcGfWJMP/Mingo?node-id=0-1&t=wAW2puPQtt0X9W9b-1
+
+---
+
 # 📌 Main Features
 
 ✅ Secure authentication  
