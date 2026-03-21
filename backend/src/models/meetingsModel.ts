@@ -5,7 +5,7 @@ const meetingSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  Date: {
+  date: {
     type: Date,
     default: Date.now,
     required: true,
@@ -13,7 +13,7 @@ const meetingSchema = new mongoose.Schema({
   duration: {
     type: Number,
   },
-  organizerID: {
+  organizerId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "user",
     required: true,
@@ -25,7 +25,7 @@ const meetingSchema = new mongoose.Schema({
       required: true,
     },
   ],
-  transcriptID: {
+  transcriptId: {
     ref: "transcript",
     required: true,
   },
@@ -40,7 +40,7 @@ const meetingSchema = new mongoose.Schema({
       type: String,
     },
   ],
-  llmChatID: {
+  llmChatId: {
     ref: "llmChat",
   },
 });
