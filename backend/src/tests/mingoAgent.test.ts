@@ -1,316 +1,261 @@
 /// <reference types="jest" />
 
-import { Response } from "express";
-import mingoAgentController from "../controllers/mingoAgentController";
+import path from "path";
+import dotenv from "dotenv";
+import request from "supertest";
+import initApp from "../index";
+import meetingsModel from "../models/meetingsModel";
 import mingoAgentModel from "../models/mingoAgentModel";
-import mingoAgentService from "../services/LLM/mingoAgentService";
-import { AuthRequest } from "../middleware/authMiddleware";
+import { Express } from "express";
+import mongoose from "mongoose";
+import jwt from "jsonwebtoken";
 
-jest.mock("../models/mingoAgentModel", () => ({
-  __esModule: true,
-  default: {
-    findOne: jest.fn(),
-  },
-}));
+jest.setTimeout(30000);
 
-jest.mock("../services/LLM/mingoAgentService", () => ({
-  __esModule: true,
-  default: {
-    generateReply: jest.fn(),
-    generateSummary: jest.fn(),
-    generateTopics: jest.fn(),
-  },
-}));
+let app: Express;
+let authToken: string;
+let otherAuthToken: string;
+const userId = new mongoose.Types.ObjectId().toString();
+const otherUserId = new mongoose.Types.ObjectId().toString();
+let createdMeetingId: string;
+let createdChatId: string;
+let createdReplyMeetingId: string;
+let createdSummaryMeetingId: string;
+let createdTopicsMeetingId: string;
+let llmUser: string;
+let llmPass: string;
+let jwtSecret: string;
 
-type MockResponse = Response & {
-  status: jest.Mock;
-  json: jest.Mock;
-  send: jest.Mock;
-};
-
-const mockedmingoAgentModel = mingoAgentModel as unknown as {
-  findOne: jest.Mock;
-};
-
-const mockedMingoAgentService = mingoAgentService as unknown as {
-  generateReply: jest.Mock;
-  generateSummary: jest.Mock;
-  generateTopics: jest.Mock;
-};
-
-const createMockResponse = () => {
-  const res = {} as MockResponse;
-  res.status = jest.fn().mockReturnValue(res);
-  res.json = jest.fn().mockReturnValue(res);
-  res.send = jest.fn().mockReturnValue(res);
-  return res;
-};
-
-const createAuthRequest = (overrides: Partial<AuthRequest> = {}) =>
-  ({
-    params: {},
-    body: {},
-    headers: {},
-    ...overrides,
-  }) as AuthRequest;
-
-describe("LLM Chat controller", () => {
-  let consoleErrorSpy: jest.SpyInstance;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+beforeAll(async () => {
+  dotenv.config({
+    path: path.resolve(__dirname, "../../../.env.development"),
   });
 
-  afterEach(() => {
-    consoleErrorSpy.mockRestore();
+  llmUser = process.env.LLM_USER || "";
+  llmPass = process.env.LLM_PASS || "";
+  jwtSecret = process.env.JWT_SECRET || "";
+
+  if (!llmUser || !llmPass || !jwtSecret) {
+    throw new Error(
+      "Missing required parameters in .env.development: LLM_USER, LLM_PASS, or JWT_SECRET",
+    );
+  }
+
+  app = await initApp();
+
+  const createdMeeting = (await meetingsModel.create({
+    title: "Budget sync",
+    date: new Date("2026-03-20T09:00:00.000Z"),
+    duration: 45,
+    organizerId: userId,
+    participants: [userId, otherUserId],
+    transcriptId: new mongoose.Types.ObjectId(),
+    topics: [],
+    tasks: ["Send budget by Friday"],
+  })) as any;
+  createdMeetingId = createdMeeting._id.toString();
+
+  const createdChat = await mingoAgentModel.create({
+    meetingID: createdMeeting._id,
+    messages: [
+      {
+        sender: "user",
+        content: "What was decided?",
+        timestamp: new Date("2026-03-20T09:10:00.000Z"),
+      },
+      {
+        sender: "mingo",
+        content: "The budget will be sent by Friday.",
+        timestamp: new Date("2026-03-20T09:11:00.000Z"),
+      },
+    ],
+  });
+  createdChatId = createdChat._id.toString();
+
+  const createdReplyMeeting = (await meetingsModel.create({
+    title: "Action items review",
+    date: new Date("2026-03-20T10:00:00.000Z"),
+    duration: 30,
+    organizerId: userId,
+    participants: [userId],
+    transcriptId: new mongoose.Types.ObjectId(),
+    topics: [],
+    tasks: ["Send budget by Friday", "Confirm timeline"],
+  })) as any;
+  createdReplyMeetingId = createdReplyMeeting._id.toString();
+
+  const createdSummaryMeeting = (await meetingsModel.create({
+    title: "Weekly planning",
+    date: new Date("2026-03-20T11:00:00.000Z"),
+    duration: 60,
+    organizerId: userId,
+    participants: [userId, otherUserId],
+    transcriptId: new mongoose.Types.ObjectId(),
+    topics: [],
+    tasks: ["Review budget", "Share updates"],
+  })) as any;
+  createdSummaryMeetingId = createdSummaryMeeting._id.toString();
+
+  const createdTopicsMeeting = (await meetingsModel.create({
+    title: "Roadmap alignment",
+    date: new Date("2026-03-20T12:00:00.000Z"),
+    duration: 50,
+    organizerId: userId,
+    participants: [userId, otherUserId],
+    transcriptId: new mongoose.Types.ObjectId(),
+    topics: [],
+    tasks: ["Align roadmap", "Track owners"],
+  })) as any;
+  createdTopicsMeetingId = createdTopicsMeeting._id.toString();
+
+  authToken = jwt.sign({ _id: userId }, jwtSecret, { expiresIn: "1h" });
+  otherAuthToken = jwt.sign({ _id: otherUserId }, jwtSecret, {
+    expiresIn: "1h",
+  });
+}, 30000);
+
+afterAll(async () => {
+  const meetingIds = [
+    createdMeetingId,
+    createdReplyMeetingId,
+    createdSummaryMeetingId,
+    createdTopicsMeetingId,
+  ].filter(Boolean);
+
+  if (createdChatId) {
+    await mingoAgentModel.deleteMany({ _id: createdChatId });
+  }
+
+  if (meetingIds.length > 0) {
+    await mingoAgentModel.deleteMany({ meetingID: { $in: meetingIds } });
+    await meetingsModel.deleteMany({ _id: { $in: meetingIds } });
+  }
+
+  await mongoose.connection.close();
+});
+
+describe("Mingo Agent API", () => {
+  // ── GET /api/meetings/:meetingId/mingoAgent ──
+
+  test("get meeting chat requires authentication", async () => {
+    const response = await request(app).get(
+      `/api/meetings/${createdMeetingId}/mingoAgent`,
+    );
+
+    expect(response.status).toBe(401);
   });
 
-  describe("getByMeetingId", () => {
-    it("returns 400 when meetingId is missing", async () => {
-      const req = createAuthRequest();
-      const res = createMockResponse();
+  test("gets the chat for a specific meeting", async () => {
+    const response = await request(app)
+      .get(`/api/meetings/${createdMeetingId}/mingoAgent`)
+      .set("Authorization", `Bearer ${authToken}`);
 
-      await mingoAgentController.getByMeetingId(req, res);
-
-      expect(mockedmingoAgentModel.findOne).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({
-        error: "Meeting ID is required",
-      });
-    });
-
-    it("returns the meeting chat when one exists", async () => {
-      const chat = {
-        _id: "chat-1",
-        meetingID: "meeting-1",
-        messages: [{ sender: "user", content: "What was decided?" }],
-      };
-      mockedmingoAgentModel.findOne.mockResolvedValue(chat);
-      const req = createAuthRequest({
-        params: { meetingId: "meeting-1" },
-      });
-      const res = createMockResponse();
-
-      await mingoAgentController.getByMeetingId(req, res);
-
-      expect(mockedmingoAgentModel.findOne).toHaveBeenCalledWith({
-        meetingID: "meeting-1",
-      });
-      expect(res.json).toHaveBeenCalledWith(chat);
-      expect(res.status).not.toHaveBeenCalled();
-    });
-
-    it("returns 500 when the chat lookup fails", async () => {
-      mockedmingoAgentModel.findOne.mockRejectedValue(new Error("db failure"));
-      const req = createAuthRequest({
-        params: { meetingId: "meeting-1" },
-      });
-      const res = createMockResponse();
-
-      await mingoAgentController.getByMeetingId(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(500);
-      expect(res.send).toHaveBeenCalledWith(
-        "Error: Can't retrieve chats for the meeting",
-      );
-    });
+    expect(response.status).toBe(200);
+    expect(response.body._id).toBe(createdChatId);
+    expect(response.body.meetingID).toBe(createdMeetingId);
+    expect(Array.isArray(response.body.messages)).toBe(true);
+    expect(response.body.messages.length).toBe(2);
   });
 
-  describe("generateReply", () => {
-    it("returns 400 when meetingId is missing", async () => {
-      const req = createAuthRequest({
-        body: { message: "Summarize the action items" },
-      });
-      const res = createMockResponse();
+  // ── POST /api/meetings/:meetingId/mingoAgent/generateReply ──
 
-      await mingoAgentController.generateReply(req, res);
+  test("generate reply requires authentication", async () => {
+    const response = await request(app)
+      .post(`/api/meetings/${createdReplyMeetingId}/mingoAgent/generateReply`)
+      .send({ message: "What are the action items?" });
 
-      expect(mockedMingoAgentService.generateReply).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({
-        error: "Meeting ID is required",
-      });
-    });
-
-    it("returns 400 when message is missing", async () => {
-      const req = createAuthRequest({
-        params: { meetingId: "meeting-1" },
-        body: {},
-      });
-      const res = createMockResponse();
-
-      await mingoAgentController.generateReply(req, res);
-
-      expect(mockedMingoAgentService.generateReply).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({
-        error:
-          "Message body parameter is required and must be a non-empty string",
-      });
-    });
-
-    it("returns 400 when message is blank", async () => {
-      const req = createAuthRequest({
-        params: { meetingId: "meeting-1" },
-        body: { message: "   " },
-      });
-      const res = createMockResponse();
-
-      await mingoAgentController.generateReply(req, res);
-
-      expect(mockedMingoAgentService.generateReply).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({
-        error:
-          "Message body parameter is required and must be a non-empty string",
-      });
-    });
-
-    it("returns the generated reply", async () => {
-      mockedMingoAgentService.generateReply.mockResolvedValue({
-        reply: "The main action item is to send the budget by Friday.",
-      });
-      const req = createAuthRequest({
-        params: { meetingId: "meeting-1" },
-        body: { message: "What are the action items?" },
-      });
-      const res = createMockResponse();
-
-      await mingoAgentController.generateReply(req, res);
-
-      expect(mockedMingoAgentService.generateReply).toHaveBeenCalledWith(
-        "meeting-1",
-        "What are the action items?",
-      );
-      expect(res.json).toHaveBeenCalledWith({
-        reply: "The main action item is to send the budget by Friday.",
-      });
-      expect(res.status).not.toHaveBeenCalled();
-    });
-
-    it("returns 500 when the agent service throws", async () => {
-      mockedMingoAgentService.generateReply.mockRejectedValue(
-        new Error("llm failure"),
-      );
-      const req = createAuthRequest({
-        params: { meetingId: "meeting-1" },
-        body: { message: "Give me the blockers" },
-      });
-      const res = createMockResponse();
-
-      await mingoAgentController.generateReply(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(500);
-      expect(res.send).toHaveBeenCalledWith(
-        "Error: Can't generate reply for the meeting",
-      );
-    });
+    expect(response.status).toBe(401);
   });
 
-  describe("generateSummary", () => {
-    it("returns 400 when meetingId is missing", async () => {
-      const req = createAuthRequest();
-      const res = createMockResponse();
+  test("generate reply returns 400 when message is missing", async () => {
+    const response = await request(app)
+      .post(`/api/meetings/${createdReplyMeetingId}/mingoAgent/generateReply`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .send({});
 
-      await mingoAgentController.generateSummary(req, res);
-
-      expect(mockedMingoAgentService.generateSummary).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({
-        error: "Meeting ID is required",
-      });
-    });
-
-    it("returns the generated summary", async () => {
-      mockedMingoAgentService.generateSummary.mockResolvedValue({
-        summary:
-          "The meeting covered budget status, assigned follow-ups, and agreed on Friday delivery.",
-      });
-      const req = createAuthRequest({
-        params: { meetingId: "meeting-1" },
-      });
-      const res = createMockResponse();
-
-      await mingoAgentController.generateSummary(req, res);
-
-      expect(mockedMingoAgentService.generateSummary).toHaveBeenCalledWith(
-        "meeting-1",
-      );
-      expect(res.json).toHaveBeenCalledWith({
-        summary:
-          "The meeting covered budget status, assigned follow-ups, and agreed on Friday delivery.",
-      });
-      expect(res.status).not.toHaveBeenCalled();
-    });
-
-    it("returns 500 when the summary generation fails", async () => {
-      mockedMingoAgentService.generateSummary.mockRejectedValue(
-        new Error("summary failure"),
-      );
-      const req = createAuthRequest({
-        params: { meetingId: "meeting-1" },
-      });
-      const res = createMockResponse();
-
-      await mingoAgentController.generateSummary(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(500);
-      expect(res.send).toHaveBeenCalledWith(
-        "Error: Can't generate summary for the meeting",
-      );
-    });
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe(
+      "Message body parameter is required and must be a non-empty string",
+    );
   });
 
-  describe("generateTopics", () => {
-    it("returns 400 when meetingId is missing", async () => {
-      const req = createAuthRequest();
-      const res = createMockResponse();
+  test("generates a reply for the meeting", async () => {
+    const response = await request(app)
+      .post(`/api/meetings/${createdReplyMeetingId}/mingoAgent/generateReply`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .send({ message: "What are the action items?" });
 
-      await mingoAgentController.generateTopics(req, res);
+    expect(response.status).toBe(200);
+    expect(typeof response.body.reply).toBe("string");
+    expect(response.body.reply.length).toBeGreaterThan(0);
+    expect(response.body.reply.toLowerCase()).toContain("budget");
+    expect(response.body.reply.toLowerCase()).toContain("timeline");
 
-      expect(mockedMingoAgentService.generateTopics).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({
-        error: "Meeting ID is required",
-      });
+    const savedChat = await mingoAgentModel.findOne({
+      meetingID: createdReplyMeetingId,
     });
 
-    it("returns the generated topics", async () => {
-      mockedMingoAgentService.generateTopics.mockResolvedValue({
-        topics: ["Budget", "Timeline", "Action items"],
-      });
-      const req = createAuthRequest({
-        params: { meetingId: "meeting-1" },
-      });
-      const res = createMockResponse();
+    expect(savedChat).not.toBeNull();
+    expect(savedChat?.messages.length).toBe(2);
+    expect(savedChat?.messages[0]?.sender).toBe("user");
+    expect(savedChat?.messages[0]?.content).toBe("What are the action items?");
+    expect(savedChat?.messages[1]?.sender).toBe("mingo");
+    expect(savedChat?.messages[1]?.content).toBe(response.body.reply);
+  });
 
-      await mingoAgentController.generateTopics(req, res);
+  // ── GET /api/meetings/:meetingId/mingoAgent/generateSummary ──
 
-      expect(mockedMingoAgentService.generateTopics).toHaveBeenCalledWith(
-        "meeting-1",
+  test("generate summary requires authentication", async () => {
+    const response = await request(app).get(
+      `/api/meetings/${createdSummaryMeetingId}/mingoAgent/generateSummary`,
+    );
+
+    expect(response.status).toBe(401);
+  });
+
+  test("gets a generated summary for a meeting", async () => {
+    const response = await request(app)
+      .get(`/api/meetings/${createdSummaryMeetingId}/mingoAgent/generateSummary`)
+      .set("Authorization", `Bearer ${authToken}`);
+
+    expect(response.status).toBe(200);
+    expect(typeof response.body.summary).toBe("string");
+    expect(response.body.summary.length).toBeGreaterThan(0);
+    expect(response.body.summary.toLowerCase()).toContain("weekly planning");
+    expect(response.body.summary.toLowerCase()).toContain("review budget");
+  });
+
+  // ── GET /api/meetings/:meetingId/mingoAgent/generateTopics ──
+
+  test("generate topics requires authentication", async () => {
+    const response = await request(app).get(
+      `/api/meetings/${createdTopicsMeetingId}/mingoAgent/generateTopics`,
+    );
+
+    expect(response.status).toBe(401);
+  });
+
+  test("gets generated topics for a meeting", async () => {
+    const response = await request(app)
+      .get(`/api/meetings/${createdTopicsMeetingId}/mingoAgent/generateTopics`)
+      .set("Authorization", `Bearer ${authToken}`);
+
+    expect(response.status).toBe(200);
+    expect(Array.isArray(response.body.topics)).toBe(true);
+    expect(response.body.topics.length).toBeGreaterThan(0);
+    response.body.topics.forEach((topic: unknown) => {
+      expect(topic).toHaveProperty("title");
+      expect(topic).toHaveProperty("description");
+      expect(typeof (topic as { title: string }).title).toBe("string");
+      expect(typeof (topic as { description: string }).description).toBe(
+        "string",
       );
-      expect(res.json).toHaveBeenCalledWith({
-        topics: ["Budget", "Timeline", "Action items"],
-      });
-      expect(res.status).not.toHaveBeenCalled();
-    });
-
-    it("returns 500 when the topics generation fails", async () => {
-      mockedMingoAgentService.generateTopics.mockRejectedValue(
-        new Error("topics failure"),
+      expect((topic as { title: string }).title.trim().length).toBeGreaterThan(
+        0,
       );
-      const req = createAuthRequest({
-        params: { meetingId: "meeting-1" },
-      });
-      const res = createMockResponse();
-
-      await mingoAgentController.generateTopics(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(500);
-      expect(res.send).toHaveBeenCalledWith(
-        "Error: Can't generate topics for the meeting",
-      );
+      expect(
+        (topic as { description: string }).description.trim().length,
+      ).toBeGreaterThan(0);
     });
   });
 });

@@ -26,6 +26,7 @@ const meetingSchema = new mongoose.Schema({
     },
   ],
   transcriptId: {
+    type: mongoose.Schema.Types.ObjectId,
     ref: "transcript",
     required: true,
   },
@@ -41,6 +42,7 @@ const meetingSchema = new mongoose.Schema({
     },
   ],
   mingoAgentId: {
+    type: mongoose.Schema.Types.ObjectId,
     ref: "mingoAgent",
   },
 });
