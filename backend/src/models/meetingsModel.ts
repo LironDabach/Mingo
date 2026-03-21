@@ -35,6 +35,11 @@ const meetingSchema = new mongoose.Schema({
       ref: "topic",
     },
   ],
+  tasks: [
+    {
+      type: String,
+    },
+  ],
   llmChatID: {
     ref: "llmChat",
   },
