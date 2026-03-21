@@ -1,12 +1,12 @@
 import { Response } from "express";
-import llmChatModel from "../models/llmChatModel";
+import mingoAgentModel from "../models/mingoAgentModel";
 import { AuthRequest } from "../middleware/authMiddleware";
 import baseController from "./baseController";
 import mingoAgentService from "../services/LLM/mingoAgentService";
 
-class llmChatController extends baseController {
+class mingoAgentController extends baseController {
   constructor() {
-    super(llmChatModel);
+    super(mingoAgentModel);
   }
 
   async getByMeetingId(req: AuthRequest, res: Response) {
@@ -64,6 +64,23 @@ class llmChatController extends baseController {
       res.status(500).send("Error: Can't generate summary for the meeting");
     }
   }
+
+  // Generate topics for the meeting
+  async generateTopics(req: AuthRequest, res: Response) {
+    const meetingId = req.params.meetingId;
+
+    if (!meetingId) {
+      return res.status(400).json({ error: "Meeting ID is required" });
+    }
+
+    try {
+      const result = await mingoAgentService.generateTopics(meetingId);
+      res.json({ topics: result.topics });
+    } catch (err) {
+      console.error(err);
+      res.status(500).send("Error: Can't generate topics for the meeting");
+    }
+  }
 }
 
-export default new llmChatController();
+export default new mingoAgentController();

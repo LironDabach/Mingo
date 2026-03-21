@@ -40,8 +40,8 @@ const meetingSchema = new mongoose.Schema({
       type: String,
     },
   ],
-  llmChatId: {
-    ref: "llmChat",
+  mingoAgentId: {
+    ref: "mingoAgent",
   },
 });
 

@@ -7,7 +7,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "tsc && jest --runInBand --detectOpenHandles --forceExit",
-    "testLLMChat": "tsc && jest --runInBand --detectOpenHandles --forceExit ./src/tests/llmChat.test.ts",
+    "testMingoAgent": "tsc && jest --runInBand --detectOpenHandles --forceExit ./src/tests/mingoAgent.test.ts",
     "jestCoverage": "jest --coverage --runInBand --detectOpenHandles --forceExit",
     "prod": "cp ../.env.production .env && tsc -p tsconfig_prod.json && pm2 restart ecosystem.config.js --env production"
   },

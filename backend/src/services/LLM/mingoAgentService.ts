@@ -1,6 +1,4 @@
-// import llmChatModel from "../models/llmChatModel";
-// import meetingsModel from "../models/meetingsModel";
-import llmChatModel from "../../models/llmChatModel";
+import mingoAgentModel from "../../models/mingoAgentModel";
 import meetingsModel from "../../models/meetingsModel";
 import llmService, { LlmService } from "./llmService";
 
@@ -35,7 +33,7 @@ class MingoAgentService {
   private static readonly MAX_PROMPT_HISTORY_CHARS = 8000;
 
   private meetings = meetingsModel;
-  private chats = llmChatModel;
+  private chats = mingoAgentModel;
   private llm: LlmService;
 
   constructor(llm = llmService) {
@@ -238,8 +236,8 @@ class MingoAgentService {
 
     let chat = null;
 
-    if (existingMeeting.llmChatId) {
-      chat = await this.chats.findById(existingMeeting.llmChatId);
+    if (existingMeeting.mingoAgentId) {
+      chat = await this.chats.findById(existingMeeting.mingoAgentId);
     }
 
     if (!chat) {
@@ -255,10 +253,10 @@ class MingoAgentService {
 
     const chatId = chat._id;
     if (
-      !existingMeeting.llmChatId ||
-      String(existingMeeting.llmChatId) !== String(chatId)
+      !existingMeeting.mingoAgentId ||
+      String(existingMeeting.mingoAgentId) !== String(chatId)
     ) {
-      (existingMeeting as any).llmChatID = chatId;
+      (existingMeeting as any).mingoAgentID = chatId;
       await existingMeeting.save();
     }
 
@@ -410,6 +408,90 @@ class MingoAgentService {
     }
 
     return { summary };
+  }
+
+  async generateTopics(meetingId: string): Promise<{ topics: string[] }> {
+    if (!meetingId) {
+      throw new MingoAgentError("Meeting ID is required", 400);
+    }
+
+    const meeting = await this.getMeetingOrThrow(meetingId);
+
+    const topicsPrompt = [
+      "You are Mingo, an AI assistant for meeting management.",
+      "Based on the following meeting context, generate a list of concise topics that were discussed in the meeting.",
+      "Use only the provided meeting data as facts. Do not invent details that are not present in the context.",
+      "",
+      "Meeting context summary:",
+      `Title: ${this.summarizeContextValue(meeting?.title)}`,
+      `Date: ${
+        meeting?.date instanceof Date
+          ? meeting.date.toISOString()
+          : meeting?.date
+            ? new Date(meeting.date).toISOString()
+            : "Not available"
+      }`,
+      `Duration: ${this.summarizeContextValue(meeting?.duration)}`,
+      `Organizer ID: ${this.summarizeContextValue(meeting?.organizerId)}`,
+      `Participants: ${this.summarizeContextValue(meeting?.participants)}`,
+      `Transcript ID: ${this.summarizeContextValue(meeting?.transcriptId)}`,
+      `Topics: ${this.summarizeContextValue(meeting?.topics)}`,
+      `Tasks: ${this.summarizeContextValue(meeting?.tasks)}`,
+      "",
+      "Meeting context JSON:",
+      this.formatContextAsJson(meeting),
+      "",
+      "Topics as Mingo (return as a JSON array of strings):",
+    ].join("\n");
+
+    let topicsResponse = "";
+    try {
+      const response = await this.llm.generate({
+        prompt: topicsPrompt,
+        options: {
+          temperature: 0.2,
+          top_p: 0.9,
+          num_predict: 400,
+        },
+      });
+
+      topicsResponse = this.normalizeAssistantResponse(response.response);
+    } catch (error) {
+      if (error instanceof MingoAgentError) {
+        throw error;
+      }
+
+      throw new MingoAgentError("Failed to generate Mingo topics", 503);
+    }
+
+    if (!topicsResponse) {
+      throw new MingoAgentError(
+        "The LLM returned an empty topics response",
+        502,
+      );
+    }
+
+    let topics: string[] = [];
+    try {
+      const parsed = JSON.parse(topicsResponse);
+      if (
+        Array.isArray(parsed) &&
+        parsed.every((item) => typeof item === "string")
+      ) {
+        topics = parsed;
+      } else {
+        throw new Error("Parsed topics is not an array of strings");
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : String(error);
+      throw new MingoAgentError(
+        "Failed to parse topics response from LLM: " + message,
+        502,
+      );
+    }
+
+    return { topics };
   }
 }
 

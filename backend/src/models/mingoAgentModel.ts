@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-const llmChatSchema = new mongoose.Schema({
+const mingoAgentSchema = new mongoose.Schema({
   meetingID: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "meeting",
@@ -31,4 +31,4 @@ const llmChatSchema = new mongoose.Schema({
   ],
 });
 
-export default mongoose.model("llmChat", llmChatSchema);
+export default mongoose.model("mingoAgent", mingoAgentSchema);
