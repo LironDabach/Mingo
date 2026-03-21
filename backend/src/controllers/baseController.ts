@@ -38,6 +38,22 @@ class BaseController {
     }
   }
 
+  async getByUserId(req: Request, res: Response) {
+    const userId = req.params.userId;
+    console.log("Get by User ID: " + userId);
+    try {
+      const data = await this.model.find({ userID: userId });
+      if (!data) {
+        return res.status(404).send("Error: Not found");
+      } else {
+        res.json(data);
+      }
+    } catch (err) {
+      console.error(err);
+      res.status(500).send("Error: Can't retrieve Entity by User ID");
+    }
+  }
+
   // Override create to handle postID for comments and likes
   async create(req: Request, res: Response) {
     const postId = req.params.postId;
@@ -55,7 +71,7 @@ class BaseController {
     }
   }
 
-  async del(req: Request, res: Response) {
+  async delete(req: Request, res: Response) {
     const id = req.params.id;
     try {
       const deletedData = await this.model.findByIdAndDelete(id);
