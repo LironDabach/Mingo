@@ -26,6 +26,11 @@ type AgentReply = {
   messages: ChatMessage[];
 };
 
+type TopicItem = {
+  title: string;
+  description: string;
+};
+
 class MingoAgentService {
   private static readonly MAX_USER_MESSAGE_LENGTH = 4000;
   private static readonly MAX_ASSISTANT_MESSAGE_LENGTH = 6000;
@@ -135,6 +140,165 @@ class MingoAgentService {
     }
 
     return String(value);
+  }
+
+  private normalizeTopicItem(value: unknown): TopicItem | null {
+    if (typeof value === "string") {
+      const title = value.trim();
+      if (!title) {
+        return null;
+      }
+
+      return {
+        title,
+        description: `Discussion related to ${title.toLowerCase()}.`,
+      };
+    }
+
+    if (value && typeof value === "object") {
+      const record = value as {
+        title?: unknown;
+        description?: unknown;
+        subject?: unknown;
+      };
+      const rawTitle =
+        typeof record.title === "string"
+          ? record.title
+          : typeof record.subject === "string"
+            ? record.subject
+            : "";
+      const rawDescription =
+        typeof record.description === "string" ? record.description : "";
+      const title = rawTitle.trim();
+      const description = rawDescription.trim();
+
+      if (!title) {
+        return null;
+      }
+
+      return {
+        title,
+        description:
+          description || `Discussion related to ${title.toLowerCase()}.`,
+      };
+    }
+
+    return null;
+  }
+
+  private parseTopicsResponse(topicsResponse: string): TopicItem[] {
+    const normalizeTopics = (value: unknown): TopicItem[] | null => {
+      if (!Array.isArray(value)) {
+        return null;
+      }
+
+      const topics = value
+        .map((item) => this.normalizeTopicItem(item))
+        .filter(Boolean);
+
+      return topics.length ? (topics as TopicItem[]) : null;
+    };
+
+    const tryParseJson = (raw: string): TopicItem[] | null => {
+      const parsed = JSON.parse(raw) as unknown;
+
+      const directTopics = normalizeTopics(parsed);
+      if (directTopics) {
+        return directTopics;
+      }
+
+      if (parsed && typeof parsed === "object") {
+        const objectTopics = normalizeTopics(
+          (parsed as { topics?: unknown }).topics,
+        );
+        if (objectTopics) {
+          return objectTopics;
+        }
+      }
+
+      return null;
+    };
+
+    try {
+      const parsedTopics = tryParseJson(topicsResponse);
+      if (parsedTopics) {
+        return parsedTopics;
+      }
+    } catch {
+      // Fall through to substring extraction below.
+    }
+
+    const jsonArrayMatch = topicsResponse.match(/\[[\s\S]*\]/);
+    if (jsonArrayMatch) {
+      try {
+        const parsedTopics = tryParseJson(jsonArrayMatch[0]);
+        if (parsedTopics) {
+          return parsedTopics;
+        }
+      } catch {
+        // Fall through to bullet parsing below.
+      }
+    }
+
+    const bulletTopics = topicsResponse
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => /^[-*•]\s+/.test(line))
+      .map((line) =>
+        this.normalizeTopicItem(line.replace(/^[-*•]\s+/, "").trim()),
+      )
+      .filter(Boolean);
+
+    if (bulletTopics.length) {
+      return bulletTopics as TopicItem[];
+    }
+
+    throw new Error("Parsed topics is not a supported topics array");
+  }
+
+  private buildFallbackTopics(meeting: any): TopicItem[] {
+    const normalizedTopics = Array.isArray(meeting?.topics)
+      ? meeting.topics
+          .map((topic: unknown) => this.normalizeTopicItem(topic))
+          .filter(Boolean)
+      : [];
+
+    if (normalizedTopics.length) {
+      return normalizedTopics as TopicItem[];
+    }
+
+    const taskTopics = Array.isArray(meeting?.tasks)
+      ? meeting.tasks
+          .filter((task: unknown) => typeof task === "string")
+          .map((task: string) => ({
+            title: task.trim(),
+            description: `Action item discussed in the meeting: ${task.trim()}.`,
+          }))
+          .filter((topic: TopicItem) => Boolean(topic.title))
+          .slice(0, 5)
+      : [];
+
+    if (taskTopics.length) {
+      return taskTopics;
+    }
+
+    const title =
+      typeof meeting?.title === "string" ? meeting.title.trim() : "";
+    if (title) {
+      return [
+        {
+          title,
+          description: `Main discussion topic based on the meeting title: ${title}.`,
+        },
+      ];
+    }
+
+    return [
+      {
+        title: "General meeting discussion",
+        description: "General discussion derived from the meeting context.",
+      },
+    ];
   }
 
   private serializeHistory(messages: ChatMessage[]) {
@@ -410,7 +574,7 @@ class MingoAgentService {
     return { summary };
   }
 
-  async generateTopics(meetingId: string): Promise<{ topics: string[] }> {
+  async generateTopics(meetingId: string): Promise<{ topics: TopicItem[] }> {
     if (!meetingId) {
       throw new MingoAgentError("Meeting ID is required", 400);
     }
@@ -441,27 +605,40 @@ class MingoAgentService {
       "Meeting context JSON:",
       this.formatContextAsJson(meeting),
       "",
-      "Topics as Mingo (return as a JSON array of strings):",
+      'Topics as Mingo (return as JSON array of objects like [{"title":"...","description":"..."}]):',
     ].join("\n");
 
     let topicsResponse = "";
     try {
-      const response = await this.llm.generate({
-        prompt: topicsPrompt,
-        options: {
-          temperature: 0.2,
-          top_p: 0.9,
-          num_predict: 400,
-        },
-      });
+      try {
+        const response = await this.llm.generate({
+          prompt: topicsPrompt,
+          format: "json",
+          options: {
+            temperature: 0.2,
+            top_p: 0.9,
+            num_predict: 400,
+          },
+        });
 
-      topicsResponse = this.normalizeAssistantResponse(response.response);
+        topicsResponse = this.normalizeAssistantResponse(response.response);
+      } catch {
+        const response = await this.llm.generate({
+          prompt: topicsPrompt,
+          options: {
+            temperature: 0.2,
+            top_p: 0.9,
+            num_predict: 400,
+          },
+        });
+
+        topicsResponse = this.normalizeAssistantResponse(response.response);
+      }
     } catch (error) {
       if (error instanceof MingoAgentError) {
         throw error;
       }
-
-      throw new MingoAgentError("Failed to generate Mingo topics", 503);
+      return { topics: this.buildFallbackTopics(meeting) };
     }
 
     if (!topicsResponse) {
@@ -471,17 +648,9 @@ class MingoAgentService {
       );
     }
 
-    let topics: string[] = [];
     try {
-      const parsed = JSON.parse(topicsResponse);
-      if (
-        Array.isArray(parsed) &&
-        parsed.every((item) => typeof item === "string")
-      ) {
-        topics = parsed;
-      } else {
-        throw new Error("Parsed topics is not an array of strings");
-      }
+      const topics = this.parseTopicsResponse(topicsResponse);
+      return { topics };
     } catch (error) {
       const message =
         error instanceof Error ? error.message : String(error);
@@ -491,7 +660,6 @@ class MingoAgentService {
       );
     }
 
-    return { topics };
   }
 }
 
