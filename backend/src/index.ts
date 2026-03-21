@@ -2,6 +2,7 @@ import express, { Express } from "express";
 import mongoose from "mongoose";
 import meetingsRoute from "./routes/meetingsRoute";
 import mingoAgentRoute from "./routes/mingoAgentRoute";
+import transcriptRoute from "./routes/transcriptRoute";
 
 import { setupSwagger } from "./swagger";
 import path from "path";
@@ -20,6 +21,7 @@ app.use((req, res, next) => {
 // // API routes
 app.use("/api/meetings", meetingsRoute);
 app.use("/api", mingoAgentRoute);
+app.use("/api", transcriptRoute);
 
 // app.use("/api/comment", commentsRoute);
 // app.use("/api/like", likesRoute);
