@@ -1,0 +1,282 @@
+/* Overlay */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+
+/* Narrower variant for Start Meeting (attendees only) */
+.start-meeting-narrow {
+  max-width: 480px;
+}
+
+.start-meeting-body {
+  margin-bottom: 28px;
+}
+
+/* Modal box */
+.modal-content {
+  background: #fff;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 780px;
+  padding: 36px 40px 32px;
+  position: relative;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22);
+  animation: modalFadeIn 0.2s ease;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Close button */
+.modal-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 4px;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.modal-close:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+.modal-close svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* Title */
+.modal-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 28px;
+}
+
+/* Body — two columns */
+.modal-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  margin-bottom: 32px;
+}
+
+.modal-column-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 14px;
+}
+
+/* ===== Upload Zone ===== */
+.upload-zone {
+  border: 2px dashed #93c5fd;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  padding: 24px;
+}
+
+.upload-zone:hover {
+  background: #eff6ff;
+  border-color: #3b82f6;
+}
+
+.upload-icon {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 8px;
+}
+
+.upload-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #60a5fa;
+  margin-top: 2px;
+}
+
+.upload-sublabel {
+  font-size: 13px;
+  color: #9ca3af;
+  margin-top: 2px;
+}
+
+.upload-zone-file {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.upload-filename {
+  font-size: 14px;
+  font-weight: 600;
+  color: #3b82f6;
+  word-break: break-all;
+  text-align: center;
+}
+
+.upload-note {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-top: 10px;
+  line-height: 1.4;
+}
+
+/* ===== Attendees ===== */
+.attendees-search {
+  display: flex;
+  align-items: center;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.attendees-search input {
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: 9px 12px;
+  font-size: 14px;
+  color: #111827;
+}
+
+.attendees-search input::placeholder {
+  color: #9ca3af;
+}
+
+.attendees-search-btn {
+  background: none;
+  border: none;
+  padding: 8px 12px;
+  cursor: pointer;
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+
+.attendees-search-btn:hover {
+  color: #3b82f6;
+}
+
+.attendees-search-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.attendees-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.attendee-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  transition: background 0.12s;
+}
+
+.attendee-item:hover {
+  background: #f9fafb;
+}
+
+.attendee-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3b82f6;
+  flex-shrink: 0;
+}
+
+.attendee-name {
+  flex: 1;
+  font-size: 14px;
+  color: #374151;
+}
+
+.attendee-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  color: #ef4444;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.12s;
+}
+
+.attendee-remove:hover {
+  background: #fee2e2;
+}
+
+/* ===== Create Button ===== */
+.modal-create-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 360px;
+  margin: 0 auto;
+  padding: 14px 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: #fff;
+  background: #2563eb;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.modal-create-btn:hover {
+  background: #1d4ed8;
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);
+}
+
+.modal-create-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .modal-content {
+    padding: 24px 20px 24px;
+  }
+
+  .modal-body {
+    grid-template-columns: 1fr;
+  }
+}

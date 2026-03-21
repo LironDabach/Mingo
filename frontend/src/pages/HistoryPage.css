@@ -1,0 +1,390 @@
+.history-layout {
+  min-height: 100vh;
+  background: #f0f4fa;
+}
+
+.history-main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 40px 56px;
+}
+
+/* ===== Stats ===== */
+.history-stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.history-stat-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 20px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  transition: box-shadow 0.2s, border-color 0.2s, transform 0.15s;
+}
+
+.history-stat-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.07);
+  border-color: #bfdbfe;
+  transform: translateY(-2px);
+}
+
+.hstat-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hstat-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.hstat-icon--total {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.hstat-icon--week {
+  background: #dbeafe;
+  color: #3b82f6;
+}
+
+.hstat-icon--future {
+  background: #fef3c7;
+  color: #f59e0b;
+}
+
+.hstat-number {
+  font-size: 28px;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1;
+}
+
+.hstat-label {
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+/* ===== Toolbar ===== */
+.history-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.history-search-box {
+  flex: 1;
+  position: relative;
+  max-width: 360px;
+}
+
+.history-search-box .hsearch-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  color: #9ca3af;
+  pointer-events: none;
+}
+
+.history-search-box input {
+  width: 100%;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px 38px 10px 40px;
+  font-size: 14px;
+  color: #111827;
+  outline: none;
+  background: #fff;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.history-search-box input::placeholder {
+  color: #9ca3af;
+}
+
+.history-search-box input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.hsearch-clear {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #9ca3af;
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  transition: color 0.15s;
+}
+
+.hsearch-clear:hover {
+  color: #374151;
+}
+
+.hsearch-clear svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Filter tabs */
+.history-filter-tabs {
+  display: flex;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.hfilter-tab {
+  background: none;
+  border: none;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7280;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.hfilter-tab:hover {
+  background: #f9fafb;
+  color: #111827;
+}
+
+.hfilter-tab--active {
+  background: #111827;
+  color: #fff;
+}
+
+.hfilter-tab--active:hover {
+  background: #1f2937;
+  color: #fff;
+}
+
+/* ===== Meeting Card ===== */
+.history-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+}
+
+.history-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.history-card-header h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+}
+
+.history-count {
+  font-size: 13px;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+/* Empty */
+.history-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 20px;
+  gap: 12px;
+}
+
+.history-empty svg {
+  width: 48px;
+  height: 48px;
+}
+
+.history-empty p {
+  font-size: 15px;
+  color: #9ca3af;
+  margin: 0;
+}
+
+/* Meeting rows */
+.history-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.history-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 24px;
+  border-bottom: 1px solid #f3f4f6;
+  transition: background 0.1s;
+}
+
+.history-row:last-child {
+  border-bottom: none;
+}
+
+.history-row:hover {
+  background: #f9fafb;
+}
+
+/* Row icon */
+.history-row-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #fef3c7;
+  color: #d97706;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.history-row-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.history-row-icon--upcoming {
+  background: #dbeafe;
+  color: #3b82f6;
+}
+
+/* Row info */
+.history-row-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.history-row-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.history-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.history-row-meta svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+.hmeta-sep {
+  margin: 0 4px;
+  color: #d1d5db;
+}
+
+/* Right side */
+.history-row-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.history-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 8px;
+}
+
+.history-badge svg {
+  width: 14px;
+  height: 14px;
+}
+
+.history-badge--completed {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.history-badge--upcoming {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.history-tasks-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  background: #f3f4f6;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 900px) {
+  .history-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .history-search-box {
+    max-width: 100%;
+  }
+
+  .history-main {
+    padding: 20px 16px 32px;
+  }
+}
+
+@media (max-width: 600px) {
+  .history-stats-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .history-row {
+    padding: 12px 16px;
+  }
+
+  .history-row-right {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+  }
+}

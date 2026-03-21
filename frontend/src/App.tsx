@@ -1,6 +1,13 @@
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import type { ReactElement } from "react";
 import "./App.css";
+import DashboardPage from "./pages/DashboardPage";
+import TranscribePage from "./pages/TranscribePage";
+import LoginPage from "./pages/LoginPage";
+import RegisterPage from "./pages/RegisterPage";
+import MeetingPage from "./pages/MeetingPage";
+import TasksPage from "./pages/TasksPage";
+import HistoryPage from "./pages/HistoryPage";
 
 // Main app router — wraps protected routes with auth check
 function App() {
@@ -16,6 +23,49 @@ function App() {
 
   return (
     <Routes>
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
+      <Route
+        path="/dashboard"
+        element={
+          <RequireAuth>
+            <DashboardPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/transcribe"
+        element={
+          <RequireAuth>
+            <TranscribePage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/meeting"
+        element={
+          <RequireAuth>
+            <MeetingPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/tasks"
+        element={
+          <RequireAuth>
+            <TasksPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/history"
+        element={
+          <RequireAuth>
+            <HistoryPage />
+          </RequireAuth>
+        }
+      />
     </Routes>
   );
 }
