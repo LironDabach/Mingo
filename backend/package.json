@@ -8,6 +8,7 @@
     "start": "node dist/server.js",
     "test": "tsc && jest --runInBand --detectOpenHandles --forceExit",
     "testMingoAgent": "tsc && jest --runInBand --detectOpenHandles --forceExit ./src/tests/mingoAgent.test.ts",
+    "testTranscript": "tsc && jest --runInBand --detectOpenHandles --forceExit ./src/tests/transcript.test.ts",
     "jestCoverage": "jest --coverage --runInBand --detectOpenHandles --forceExit",
     "prod": "cp ../.env.production .env && tsc -p tsconfig_prod.json && pm2 restart ecosystem.config.js --env production"
   },
