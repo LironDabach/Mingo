@@ -1,11 +1,10 @@
 import type { Express, Request, Response } from "express";
-import swaggerUi from "swagger-ui-express";
-import swaggerJSDoc from "swagger-jsdoc";
 import path from "path";
+import swaggerJSDoc from "swagger-jsdoc";
+import swaggerUi from "swagger-ui-express";
 
-const buildSwaggerSpec = () => {
+export const buildSwaggerSpec = () => {
   const serverUrl = process.env.SWAGGER_SERVER_URL || "/";
-
   const apis = [
     path.join(process.cwd(), "src", "routes", "*.ts"),
     path.join(__dirname, "routes", "*.js"),
@@ -17,8 +16,7 @@ const buildSwaggerSpec = () => {
       info: {
         title: "Mingo API",
         version: "1.0.0",
-        description:
-          "REST API documentation for Mingo.",
+        description: "OpenAPI documentation for the Mingo backend.",
       },
       servers: [
         {
@@ -27,12 +25,12 @@ const buildSwaggerSpec = () => {
         },
       ],
       tags: [
-        { name: "Auth", description: "Authentication and token management" },
-        { name: "Posts", description: "Post CRUD operations" },
-        { name: "Users", description: "User CRUD operations" },
-        { name: "Comments", description: "Comment CRUD operations" },
-        { name: "Likes", description: "Like/unlike operations" },
-        { name: "Uploads", description: "Direct file uploads" },
+        { name: "Auth", description: "Authentication and token lifecycle" },
+        { name: "Users", description: "User management endpoints" },
+        { name: "Meetings", description: "Meeting CRUD and analytics" },
+        { name: "Tasks", description: "Meeting and user task endpoints" },
+        { name: "Transcripts", description: "Transcript retrieval and creation" },
+        { name: "Mingo Agent", description: "Meeting assistant endpoints" },
       ],
       components: {
         securitySchemes: {
@@ -40,260 +38,352 @@ const buildSwaggerSpec = () => {
             type: "http",
             scheme: "bearer",
             bearerFormat: "JWT",
-            description: "Use a valid access token in the Authorization header.",
           },
         },
         schemas: {
           ErrorResponse: {
             type: "object",
             properties: {
-              message: { type: "string", example: "Error message" },
+              message: { type: "string", example: "Unauthorized" },
+              error: { type: "string", example: "Meeting ID is required" },
             },
+          },
+          User: {
+            type: "object",
+            properties: {
+              _id: { type: "string", example: "67e11a2b9fc13e17d8b9bb11" },
+              username: { type: "string", example: "johndoe" },
+              email: { type: "string", example: "john@example.com" },
+              profilePicture: {
+                type: "string",
+                nullable: true,
+                example: "http://localhost:3000/api/upload/avatar.png",
+              },
+              githubId: {
+                type: "string",
+                nullable: true,
+                example: "1234567",
+              },
+            },
+            required: ["_id", "username", "email"],
           },
           AuthTokens: {
             type: "object",
             properties: {
-              token: { type: "string", example: "jwt-access-token-shiran-levi" },
-              refreshToken: {
-                type: "string",
-                example: "jwt-refresh-token-liron-dabach",
-              },
+              token: { type: "string", example: "jwt-access-token" },
+              refreshToken: { type: "string", example: "jwt-refresh-token" },
             },
             required: ["token", "refreshToken"],
+          },
+          AuthResponse: {
+            allOf: [
+              { $ref: "#/components/schemas/AuthTokens" },
+              {
+                type: "object",
+                properties: {
+                  user: { $ref: "#/components/schemas/User" },
+                },
+                required: ["user"],
+              },
+            ],
           },
           RegisterRequest: {
             type: "object",
             properties: {
-              username: {
-                type: "string",
-                example: "shiranLevi",
-                pattern: "^[a-zA-Z0-9._-]+$",
-                description:
-                  "Only English letters, numbers, dots, underscores, and hyphens",
-              },
-              email: { type: "string", example: "shiran.levi@example.com" },
-              password: { type: "string", example: "ShiranLevi123!" },
+              username: { type: "string", example: "johndoe" },
+              email: { type: "string", example: "john@example.com" },
+              password: { type: "string", example: "Pass1234!" },
             },
             required: ["username", "email", "password"],
           },
           LoginRequest: {
             type: "object",
             properties: {
-              username: { type: "string", example: "liron_dabach" },
-              password: { type: "string", example: "LironDabach123!" },
+              username: { type: "string", example: "johndoe" },
+              password: { type: "string", example: "Pass1234!" },
             },
             required: ["username", "password"],
           },
           RefreshTokenRequest: {
             type: "object",
             properties: {
-              refreshToken: {
-                type: "string",
-                example: "jwt-refresh-token-shiran-levi",
-              },
+              refreshToken: { type: "string", example: "jwt-refresh-token" },
             },
             required: ["refreshToken"],
           },
-          GoogleLoginRequest: {
+          GitHubLoginRequest: {
             type: "object",
             properties: {
-              credential: {
-                type: "string",
-                description: "Google ID token received from Google Sign-In",
-                example: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
-              },
+              code: { type: "string", example: "github-oauth-code" },
             },
-            required: ["credential"],
+            required: ["code"],
           },
-          GoogleAuthResponse: {
+          UserWriteRequest: {
             type: "object",
             properties: {
-              token: { type: "string", example: "jwt-access-token" },
-              refreshToken: { type: "string", example: "jwt-refresh-token" },
-              user: {
-                type: "object",
-                properties: {
-                  _id: { type: "string", example: "64f1c2a1b0c1c2d3e4f5a6b7" },
-                  username: { type: "string", example: "johndoe" },
-                  email: { type: "string", example: "john@gmail.com" },
-                  profilePicture: { type: "string", example: "https://lh3.googleusercontent.com/..." },
-                },
-              },
-            },
-            required: ["token", "refreshToken", "user"],
-          },
-          UserPreview: {
-            type: "object",
-            properties: {
-              _id: { type: "string", example: "64f1c2a1b0c1c2d3e4f5a6b8" },
-              username: { type: "string", example: "johndoe" },
+              username: { type: "string", example: "newuser" },
+              email: { type: "string", example: "newuser@example.com" },
+              password: { type: "string", example: "Pass1234!" },
               profilePicture: {
                 type: "string",
-                example: "https://lh3.googleusercontent.com/...",
+                example: "http://localhost:3000/api/upload/avatar.png",
               },
+              removeProfilePicture: {
+                oneOf: [{ type: "boolean" }, { type: "string", enum: ["true", "false"] }],
+                example: false,
+              },
+              githubId: { type: "string", example: "1234567" },
+              file: { type: "string", format: "binary" },
             },
           },
-          User: {
+          Meeting: {
             type: "object",
             properties: {
-              _id: { type: "string", example: "64f1c2a1b0c1c2d3e4f5a6b8" },
-              username: { type: "string", example: "johndoe" },
-              email: { type: "string", example: "john@example.com" },
-              profilePicture: {
+              _id: { type: "string", example: "67e11a2b9fc13e17d8b9bb22" },
+              title: { type: "string", example: "Sprint Planning" },
+              date: {
                 type: "string",
-                example: "http://localhost:3000/api/upload/johndoe-avatar.png",
+                format: "date-time",
+                example: "2026-03-22T09:00:00.000Z",
+              },
+              duration: { type: "number", nullable: true, example: 45 },
+              organizerId: {
+                type: "string",
+                example: "67e11a2b9fc13e17d8b9bb11",
+              },
+              participants: {
+                type: "array",
+                items: { type: "string" },
+              },
+              transcriptId: {
+                type: "string",
+                example: "67e11a2b9fc13e17d8b9bb33",
+              },
+              topics: {
+                type: "array",
+                items: { type: "string" },
+              },
+              tasks: {
+                type: "array",
+                items: { type: "string" },
+              },
+              mingoAgentId: {
+                type: "string",
+                nullable: true,
+                example: "67e11a2b9fc13e17d8b9bb55",
               },
             },
-            required: ["_id", "username", "email"],
+            required: [
+              "_id",
+              "title",
+              "date",
+              "organizerId",
+              "participants",
+              "transcriptId",
+            ],
           },
-          UserCreate: {
+          MeetingWriteRequest: {
             type: "object",
             properties: {
-              username: { type: "string", example: "johndoe" },
-              email: { type: "string", example: "john@example.com" },
-              password: { type: "string", example: "StrongPass123!" },
-              profilePicture: {
+              title: { type: "string", example: "Sprint Planning" },
+              date: {
                 type: "string",
-                example: "http://localhost:3000/api/upload/johndoe-avatar.png",
+                format: "date-time",
+                example: "2026-03-22T09:00:00.000Z",
               },
-              file: {
+              duration: { type: "number", example: 45 },
+              organizerId: {
                 type: "string",
-                format: "binary",
-                description: "Profile image file (multipart only).",
+                example: "67e11a2b9fc13e17d8b9bb11",
+              },
+              participants: {
+                type: "array",
+                items: { type: "string" },
+              },
+              transcriptId: {
+                type: "string",
+                example: "67e11a2b9fc13e17d8b9bb33",
+              },
+              topics: {
+                type: "array",
+                items: { type: "string" },
+              },
+              tasks: {
+                type: "array",
+                items: { type: "string" },
+              },
+              mingoAgentId: { type: "string" },
+            },
+            required: ["title", "organizerId", "participants", "transcriptId"],
+          },
+          Task: {
+            type: "object",
+            properties: {
+              _id: { type: "string", example: "67e11a2b9fc13e17d8b9bb44" },
+              gitHubIssueId: { type: "number", example: 123 },
+              gitHubRepoName: { type: "string", example: "mingo-backend" },
+              gitHubRepoOwner: {
+                type: "string",
+                example: "67e11a2b9fc13e17d8b9bb11",
               },
             },
-            required: ["username", "email", "password"],
+            required: ["_id", "gitHubIssueId", "gitHubRepoName", "gitHubRepoOwner"],
           },
-          UserUpdate: {
+          TaskWriteRequest: {
             type: "object",
             properties: {
-              username: { type: "string", example: "john_updated" },
-              email: { type: "string", example: "john.updated@example.com" },
-              password: { type: "string", example: "NewStrongPass123!" },
-              profilePicture: {
+              gitHubIssueId: { type: "number", example: 123 },
+              gitHubRepoName: { type: "string", example: "mingo-backend" },
+              gitHubRepoOwner: {
                 type: "string",
-                example: "http://localhost:3000/api/upload/johndoe-avatar-2.png",
-              },
-              file: {
-                type: "string",
-                format: "binary",
-                description: "Profile image file (multipart only).",
+                example: "67e11a2b9fc13e17d8b9bb11",
               },
             },
+            required: ["gitHubIssueId", "gitHubRepoName", "gitHubRepoOwner"],
           },
-          Post: {
+          Transcript: {
             type: "object",
             properties: {
-              _id: { type: "string", example: "64f1c2a1b0c1c2d3e4f5a6b7" },
-              title: { type: "string", example: "Shiran & Liron Project Update" },
-              body: {
+              _id: { type: "string", example: "67e11a2b9fc13e17d8b9bb33" },
+              meetingID: {
                 type: "string",
-                example: "Shiran Levi and Liron Dabach shipped Swagger docs.",
-              },
-              senderID: {
-                oneOf: [
-                  { type: "string", example: "64f1c2a1b0c1c2d3e4f5a6b8" },
-                  { $ref: "#/components/schemas/UserPreview" },
-                ],
+                example: "67e11a2b9fc13e17d8b9bb22",
               },
               date: {
                 type: "string",
                 format: "date-time",
-                example: "2026-02-18T10:00:00.000Z",
+                example: "2026-03-22T09:00:00.000Z",
               },
-              imageUrl: {
+              content: {
                 type: "string",
-                example: "https://images.example.com/posts/project-update.jpg",
+                example: "Transcript text from the meeting.",
               },
             },
-            required: ["_id", "title", "body", "senderID", "date", "imageUrl"],
+            required: ["_id", "meetingID", "date", "content"],
           },
-          PostCreate: {
+          TranscriptTextRequest: {
             type: "object",
             properties: {
-              title: { type: "string", example: "Liron Dabach: API Notes" },
-              body: {
-                type: "string",
-                example: "Shiran Levi reviewed the post routes.",
-              },
-              imageUrl: {
-                type: "string",
-                example: "https://images.example.com/posts/api-notes.jpg",
-              },
-              file: {
-                type: "string",
-                format: "binary",
-                description: "Post image file (multipart only).",
-              },
-            },
-            required: ["title", "body"],
-          },
-          PostUpdate: {
-            type: "object",
-            properties: {
-              title: { type: "string", example: "Shiran Levi: Updated Title" },
-              body: { type: "string", example: "Liron Dabach updated body." },
-              imageUrl: {
-                type: "string",
-                example: "https://images.example.com/posts/updated-cover.jpg",
-              },
-              file: {
-                type: "string",
-                format: "binary",
-                description: "Post image file (multipart only).",
-              },
-            },
-          },
-          UploadResponse: {
-            type: "object",
-            properties: {
-              url: {
-                type: "string",
-                example: "http://localhost:3000/api/upload/example.png",
-              },
-            },
-            required: ["url"],
-          },
-          Like: {
-            type: "object",
-            properties: {
-              _id: { type: "string", example: "64f1c2a1b0c1c2d3e4f5a6c0" },
-              postID: { type: "string", example: "64f1c2a1b0c1c2d3e4f5a6b7" },
-              senderID: { type: "string", example: "64f1c2a1b0c1c2d3e4f5a6b8" },
-              date: { type: "string", format: "date-time", example: "2026-02-18T10:00:00.000Z" },
-            },
-          },
-          Comment: {
-            type: "object",
-            properties: {
-              _id: { type: "string", example: "64f1c2a1b0c1c2d3e4f5a6b9" },
-              postID: { type: "string", example: "64f1c2a1b0c1c2d3e4f5a6b7" },
-              userID: {
-                oneOf: [
-                  { type: "string", example: "64f1c2a1b0c1c2d3e4f5a6b8" },
-                  { $ref: "#/components/schemas/UserPreview" },
-                ],
-              },
-              content: { type: "string", example: "Nice work, Shiran and Liron!" },
+              title: { type: "string", example: "Sprint Planning" },
               date: {
                 type: "string",
                 format: "date-time",
-                example: "2026-02-18T10:00:00.000Z",
+                example: "2026-03-22T09:00:00.000Z",
               },
-            },
-          },
-          CommentCreate: {
-            type: "object",
-            properties: {
-              content: { type: "string", example: "Great job, Shiran Levi!" },
+              content: {
+                type: "string",
+                example: "Meeting notes and transcript text.",
+              },
             },
             required: ["content"],
           },
-          CommentUpdate: {
+          TranscriptCreateResponse: {
             type: "object",
             properties: {
-              content: { type: "string", example: "Thanks, Liron Dabach!" },
+              meeting: { $ref: "#/components/schemas/Meeting" },
+              transcript: { $ref: "#/components/schemas/Transcript" },
+              transcription: {
+                type: "string",
+                example: "Meeting notes and transcript text.",
+              },
+              text: {
+                type: "string",
+                example: "Meeting notes and transcript text.",
+              },
             },
+            required: ["meeting", "transcript", "transcription", "text"],
+          },
+          MingoAgentMessage: {
+            type: "object",
+            properties: {
+              sender: {
+                type: "string",
+                enum: ["user", "mingo"],
+                example: "user",
+              },
+              content: { type: "string", example: "Summarize the meeting." },
+              timestamp: {
+                type: "string",
+                format: "date-time",
+                example: "2026-03-22T09:15:00.000Z",
+              },
+            },
+            required: ["sender", "content", "timestamp"],
+          },
+          MingoAgentChat: {
+            type: "object",
+            properties: {
+              _id: { type: "string", example: "67e11a2b9fc13e17d8b9bb55" },
+              meetingID: {
+                type: "string",
+                example: "67e11a2b9fc13e17d8b9bb22",
+              },
+              date: {
+                type: "string",
+                format: "date-time",
+                example: "2026-03-22T09:00:00.000Z",
+              },
+              messages: {
+                type: "array",
+                items: { $ref: "#/components/schemas/MingoAgentMessage" },
+              },
+            },
+            required: ["_id", "meetingID", "date", "messages"],
+          },
+          GenerateReplyRequest: {
+            type: "object",
+            properties: {
+              message: { type: "string", example: "What were the action items?" },
+            },
+            required: ["message"],
+          },
+          GenerateReplyResponse: {
+            type: "object",
+            properties: {
+              reply: {
+                type: "string",
+                example: "The action items were to prepare the demo and update the API docs.",
+              },
+            },
+            required: ["reply"],
+          },
+          GenerateSummaryResponse: {
+            type: "object",
+            properties: {
+              summary: {
+                type: "string",
+                example: "The team reviewed roadmap priorities and agreed on next steps.",
+              },
+            },
+            required: ["summary"],
+          },
+          TopicItem: {
+            type: "object",
+            properties: {
+              title: { type: "string", example: "Roadmap" },
+              description: {
+                type: "string",
+                example: "Discussion related to roadmap priorities.",
+              },
+            },
+            required: ["title", "description"],
+          },
+          GenerateTopicsResponse: {
+            type: "object",
+            properties: {
+              topics: {
+                type: "array",
+                items: { $ref: "#/components/schemas/TopicItem" },
+              },
+            },
+            required: ["topics"],
+          },
+          AverageDurationResponse: {
+            type: "object",
+            properties: {
+              averageDuration: { type: "number", example: 52.5 },
+            },
+            required: ["averageDuration"],
           },
         },
       },
@@ -303,59 +393,56 @@ const buildSwaggerSpec = () => {
 };
 
 const customCss = `
-  @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&display=swap');
   :root {
-    --accent: #0ea5e9;
-    --accent-strong: #0284c7;
-    --bg: #0f172a;
-    --surface: #111827;
+    --bg: #08111a;
+    --panel: #101c28;
     --text: #e2e8f0;
-    --muted: #94a3b8;
+    --accent: #22c55e;
+    --accent-strong: #16a34a;
   }
   body {
-    margin: 0;
-    font-family: 'Manrope', system-ui, sans-serif;
-    background: radial-gradient(1200px 600px at 10% 0%, #0b1224 0%, #0f172a 55%, #0b1120 100%);
+    background: linear-gradient(180deg, #08111a 0%, #0f1e2d 100%);
+  }
+  .swagger-ui {
+    color: var(--text);
   }
   .swagger-ui .topbar {
-    background: linear-gradient(90deg, #0b1224 0%, #0f172a 60%, #111827 100%);
-    box-shadow: 0 6px 24px rgba(2, 8, 23, 0.6);
-    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+    background: #061018;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   }
   .swagger-ui .topbar .download-url-wrapper input[type="text"] {
-    background: #0b1224;
-    color: var(--text);
-    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 8px;
   }
   .swagger-ui .topbar .download-url-wrapper .download-url-button {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
+    border-radius: 8px;
   }
-  .swagger-ui .info .title {
-    font-weight: 700;
+  .swagger-ui .info .title,
+  .swagger-ui .info .description,
+  .swagger-ui .opblock-tag,
+  .swagger-ui .opblock-description-wrapper p,
+  .swagger-ui .response-col_status,
+  .swagger-ui .response-col_description,
+  .swagger-ui .parameter__name,
+  .swagger-ui .parameter__type,
+  .swagger-ui .tab li button.tablinks,
+  .swagger-ui label,
+  .swagger-ui .model-title,
+  .swagger-ui .prop-type,
+  .swagger-ui .prop-name,
+  .swagger-ui .markdown p,
+  .swagger-ui .scheme-container,
+  .swagger-ui section.models h4,
+  .swagger-ui .responses-inner h4,
+  .swagger-ui .responses-inner h5 {
     color: var(--text);
   }
-  .swagger-ui .info .description {
-    color: var(--muted);
-  }
-  .swagger-ui .scheme-container {
-    background: rgba(15, 23, 42, 0.75);
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    border-radius: 14px;
-    box-shadow: 0 8px 28px rgba(2, 8, 23, 0.35);
-  }
-  .swagger-ui .opblock {
-    background: rgba(2, 6, 23, 0.7);
-    border-radius: 14px;
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    box-shadow: 0 10px 30px rgba(2, 8, 23, 0.35);
-  }
-  .swagger-ui .opblock .opblock-summary-description {
-    color: var(--muted);
-  }
-  .swagger-ui .opblock .opblock-summary-method {
-    border-radius: 8px;
+  .swagger-ui .scheme-container,
+  .swagger-ui .opblock,
+  .swagger-ui .model-box {
+    background: rgba(16, 28, 40, 0.9);
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    box-shadow: none;
   }
   .swagger-ui .btn {
     background: var(--accent);
@@ -366,10 +453,9 @@ const customCss = `
     background: var(--accent-strong);
     border-color: var(--accent-strong);
   }
-  .swagger-ui .model-box {
-    border-radius: 12px;
-  }
-  .swagger-ui select, .swagger-ui input, .swagger-ui textarea {
+  .swagger-ui select,
+  .swagger-ui input,
+  .swagger-ui textarea {
     background: #0b1224;
     color: var(--text);
     border-radius: 8px;
@@ -381,7 +467,7 @@ const uiOptions = {
   customSiteTitle: "Mingo API Docs",
   customCss,
   swaggerOptions: {
-    docExpansion: "none",
+    docExpansion: "none" as const,
     defaultModelsExpandDepth: -1,
     persistAuthorization: true,
     displayRequestDuration: true,
