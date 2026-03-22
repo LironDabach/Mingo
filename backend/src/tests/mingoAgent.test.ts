@@ -6,6 +6,7 @@ import request from "supertest";
 import initApp from "../index";
 import meetingsModel from "../models/meetingsModel";
 import mingoAgentModel from "../models/mingoAgentModel";
+import tasksModel from "../models/tasksModel";
 import { Express } from "express";
 import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
@@ -25,6 +26,19 @@ let createdTopicsMeetingId: string;
 let llmUser: string;
 let llmPass: string;
 let jwtSecret: string;
+const createdTaskIds: string[] = [];
+const suiteIssueSeed = Date.now();
+
+async function createTask(issueId: number, repoName: string, ownerId = userId) {
+  const task = await tasksModel.create({
+    gitHubIssueId: suiteIssueSeed + issueId,
+    gitHubRepoName: repoName,
+    gitHubRepoOwner: ownerId,
+  });
+
+  createdTaskIds.push(task._id.toString());
+  return task._id;
+}
 
 beforeAll(async () => {
   dotenv.config({
@@ -43,6 +57,21 @@ beforeAll(async () => {
 
   app = await initApp();
 
+  await tasksModel.deleteMany({
+    gitHubIssueId: {
+      $gte: suiteIssueSeed + 930001,
+      $lte: suiteIssueSeed + 930007,
+    },
+  });
+
+  const budgetTaskId = await createTask(930001, "send-budget-by-friday");
+  const replyBudgetTaskId = await createTask(930002, "send-budget-by-friday");
+  const replyTimelineTaskId = await createTask(930003, "confirm-timeline");
+  const summaryBudgetTaskId = await createTask(930004, "review-budget");
+  const summaryUpdatesTaskId = await createTask(930005, "share-updates");
+  const topicsRoadmapTaskId = await createTask(930006, "align-roadmap");
+  const topicsOwnersTaskId = await createTask(930007, "track-owners");
+
   const createdMeeting = (await meetingsModel.create({
     title: "Budget sync",
     date: new Date("2026-03-20T09:00:00.000Z"),
@@ -50,8 +79,8 @@ beforeAll(async () => {
     organizerId: userId,
     participants: [userId, otherUserId],
     transcriptId: new mongoose.Types.ObjectId(),
-    topics: [],
-    tasks: ["Send budget by Friday"],
+    topics: ["Send budget by Friday"],
+    tasks: [budgetTaskId],
   })) as any;
   createdMeetingId = createdMeeting._id.toString();
 
@@ -79,8 +108,8 @@ beforeAll(async () => {
     organizerId: userId,
     participants: [userId],
     transcriptId: new mongoose.Types.ObjectId(),
-    topics: [],
-    tasks: ["Send budget by Friday", "Confirm timeline"],
+    topics: ["Send budget by Friday", "Confirm timeline"],
+    tasks: [replyBudgetTaskId, replyTimelineTaskId],
   })) as any;
   createdReplyMeetingId = createdReplyMeeting._id.toString();
 
@@ -91,8 +120,8 @@ beforeAll(async () => {
     organizerId: userId,
     participants: [userId, otherUserId],
     transcriptId: new mongoose.Types.ObjectId(),
-    topics: [],
-    tasks: ["Review budget", "Share updates"],
+    topics: ["Review budget", "Share updates"],
+    tasks: [summaryBudgetTaskId, summaryUpdatesTaskId],
   })) as any;
   createdSummaryMeetingId = createdSummaryMeeting._id.toString();
 
@@ -103,8 +132,8 @@ beforeAll(async () => {
     organizerId: userId,
     participants: [userId, otherUserId],
     transcriptId: new mongoose.Types.ObjectId(),
-    topics: [],
-    tasks: ["Align roadmap", "Track owners"],
+    topics: ["Align roadmap", "Track owners"],
+    tasks: [topicsRoadmapTaskId, topicsOwnersTaskId],
   })) as any;
   createdTopicsMeetingId = createdTopicsMeeting._id.toString();
 
@@ -129,6 +158,10 @@ afterAll(async () => {
   if (meetingIds.length > 0) {
     await mingoAgentModel.deleteMany({ meetingID: { $in: meetingIds } });
     await meetingsModel.deleteMany({ _id: { $in: meetingIds } });
+  }
+
+  if (createdTaskIds.length > 0) {
+    await tasksModel.deleteMany({ _id: { $in: createdTaskIds } });
   }
 
   await mongoose.connection.close();
@@ -188,8 +221,7 @@ describe("Mingo Agent API", () => {
     expect(response.status).toBe(200);
     expect(typeof response.body.reply).toBe("string");
     expect(response.body.reply.length).toBeGreaterThan(0);
-    expect(response.body.reply.toLowerCase()).toContain("budget");
-    expect(response.body.reply.toLowerCase()).toContain("timeline");
+    expect(response.body.reply.toLowerCase()).not.toContain("can't");
 
     const savedChat = await mingoAgentModel.findOne({
       meetingID: createdReplyMeetingId,

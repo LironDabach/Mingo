@@ -118,6 +118,15 @@ describe("Tasks API", () => {
       expect(returnedIds).toContain(taskOneId);
       expect(returnedIds).toContain(taskTwoId);
     });
+
+    test("returns 404 when the meeting does not exist", async () => {
+      const response = await request(app)
+        .get(`/api/meetings/${new mongoose.Types.ObjectId().toString()}/tasks`)
+        .set("Authorization", `Bearer ${authToken}`);
+
+      expect(response.status).toBe(404);
+      expect(response.text).toBe("Error: Meeting not found");
+    });
   });
 
   describe("GET /api/meetings/:meetingId/tasks/:taskId", () => {
@@ -141,6 +150,29 @@ describe("Tasks API", () => {
       expect(response.status).toBe(404);
       expect(response.text).toBe("Error: Task not found");
     });
+
+    test("returns 404 when the meeting contains the task id but the task document is missing", async () => {
+      const orphanTaskId = new mongoose.Types.ObjectId();
+      const orphanMeeting = await meetingsModel.create({
+        title: "Orphan Task Meeting",
+        date: new Date("2026-03-20T13:00:00.000Z"),
+        duration: 15,
+        organizerId: userId,
+        participants: [userId],
+        transcriptId: new mongoose.Types.ObjectId(),
+        topics: [],
+        tasks: [orphanTaskId],
+      });
+
+      createdMeetingIds.push(orphanMeeting._id.toString());
+
+      const response = await request(app)
+        .get(`/api/meetings/${orphanMeeting._id.toString()}/tasks/${orphanTaskId.toString()}`)
+        .set("Authorization", `Bearer ${authToken}`);
+
+      expect(response.status).toBe(404);
+      expect(response.text).toBe("Error: Task not found");
+    });
   });
 
   describe("GET /api/users/:userId/tasks", () => {
@@ -154,6 +186,15 @@ describe("Tasks API", () => {
       expect(response.body.length).toBe(1);
       expect(response.body[0]._id).toBe(taskOneId);
       expect(response.body[0].gitHubRepoOwner).toBe(userId);
+    });
+
+    test("returns an empty list for a user with no tasks", async () => {
+      const response = await request(app)
+        .get(`/api/users/${new mongoose.Types.ObjectId().toString()}/tasks`)
+        .set("Authorization", `Bearer ${authToken}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual([]);
     });
   });
 
@@ -193,6 +234,20 @@ describe("Tasks API", () => {
         response.body._id,
       );
     });
+
+    test("returns 404 when creating a task for a missing meeting", async () => {
+      const response = await request(app)
+        .post(`/api/meetings/${new mongoose.Types.ObjectId().toString()}/tasks`)
+        .set("Authorization", `Bearer ${authToken}`)
+        .send({
+          gitHubIssueId: 910004,
+          gitHubRepoName: "missing-meeting-task",
+          gitHubRepoOwner: userId,
+        });
+
+      expect(response.status).toBe(404);
+      expect(response.text).toBe("Error: Meeting not found");
+    });
   });
 
   describe("PUT /api/meetings/:meetingId/tasks/:taskId", () => {
@@ -221,6 +276,44 @@ describe("Tasks API", () => {
       const updatedTask = await tasksModel.findById(taskOneId);
       expect(updatedTask?.gitHubRepoName).toBe("mingo-backend-updated");
     });
+
+    test("returns 404 when updating a task not attached to the meeting", async () => {
+      const response = await request(app)
+        .put(`/api/meetings/${otherMeetingId}/tasks/${taskOneId}`)
+        .set("Authorization", `Bearer ${authToken}`)
+        .send({
+          gitHubRepoName: "should-not-update",
+        });
+
+      expect(response.status).toBe(404);
+      expect(response.text).toBe("Error: Task not found");
+    });
+
+    test("returns 404 when the meeting contains the task id but the task document is missing", async () => {
+      const orphanTaskId = new mongoose.Types.ObjectId();
+      const orphanMeeting = await meetingsModel.create({
+        title: "Orphan Update Meeting",
+        date: new Date("2026-03-20T14:00:00.000Z"),
+        duration: 20,
+        organizerId: userId,
+        participants: [userId],
+        transcriptId: new mongoose.Types.ObjectId(),
+        topics: [],
+        tasks: [orphanTaskId],
+      });
+
+      createdMeetingIds.push(orphanMeeting._id.toString());
+
+      const response = await request(app)
+        .put(`/api/meetings/${orphanMeeting._id.toString()}/tasks/${orphanTaskId.toString()}`)
+        .set("Authorization", `Bearer ${authToken}`)
+        .send({
+          gitHubRepoName: "orphan-update",
+        });
+
+      expect(response.status).toBe(404);
+      expect(response.text).toBe("Error: Task not found");
+    });
   });
 
   describe("DELETE /api/meetings/:meetingId/tasks/:taskId", () => {
@@ -245,6 +338,38 @@ describe("Tasks API", () => {
 
       const updatedMeeting = await meetingsModel.findById(meetingWithTasksId);
       expect(updatedMeeting?.tasks.map((taskId) => taskId.toString())).not.toContain(taskTwoId);
+    });
+
+    test("returns 404 when deleting a task not attached to the meeting", async () => {
+      const response = await request(app)
+        .delete(`/api/meetings/${otherMeetingId}/tasks/${taskOneId}`)
+        .set("Authorization", `Bearer ${authToken}`);
+
+      expect(response.status).toBe(404);
+      expect(response.text).toBe("Error: Task not found");
+    });
+
+    test("returns 404 when the meeting contains the task id but the task document is missing", async () => {
+      const orphanTaskId = new mongoose.Types.ObjectId();
+      const orphanMeeting = await meetingsModel.create({
+        title: "Orphan Delete Meeting",
+        date: new Date("2026-03-20T15:00:00.000Z"),
+        duration: 25,
+        organizerId: userId,
+        participants: [userId],
+        transcriptId: new mongoose.Types.ObjectId(),
+        topics: [],
+        tasks: [orphanTaskId],
+      });
+
+      createdMeetingIds.push(orphanMeeting._id.toString());
+
+      const response = await request(app)
+        .delete(`/api/meetings/${orphanMeeting._id.toString()}/tasks/${orphanTaskId.toString()}`)
+        .set("Authorization", `Bearer ${authToken}`);
+
+      expect(response.status).toBe(404);
+      expect(response.text).toBe("Error: Task not found");
     });
   });
 });

@@ -1,5 +1,8 @@
 import { Request, Response } from "express";
 
+const shouldSkipErrorLogging = (err: any) =>
+  err?.name === "CastError" || err?.code === 11000;
+
 class BaseController {
   model: any;
 
@@ -17,7 +20,9 @@ class BaseController {
         res.json(data);
       }
     } catch (err) {
-      console.error(err);
+      if (!shouldSkipErrorLogging(err)) {
+        console.error(err);
+      }
       res.status(500).send("Error: Can't retrieve entities");
     }
   }
@@ -33,7 +38,9 @@ class BaseController {
         res.json(data);
       }
     } catch (err) {
-      console.error(err);
+      if (!shouldSkipErrorLogging(err)) {
+        console.error(err);
+      }
       res.status(500).send("Error: Can't retrieve Entity by ID");
     }
   }
@@ -49,7 +56,9 @@ class BaseController {
         res.json(data);
       }
     } catch (err) {
-      console.error(err);
+      if (!shouldSkipErrorLogging(err)) {
+        console.error(err);
+      }
       res.status(500).send("Error: Can't retrieve Entity by User ID");
     }
   }
@@ -66,7 +75,9 @@ class BaseController {
       const data = await this.model.create(postData);
       res.status(201).json(data);
     } catch (err) {
-      console.error(err);
+      if (!shouldSkipErrorLogging(err)) {
+        console.error(err);
+      }
       res.status(500).send("Error: Can't create entity");
     }
   }
@@ -82,7 +93,9 @@ class BaseController {
       res.status(200).json(deletedData);
       console.log("delete data -----" + deletedData);
     } catch (err) {
-      console.error(err);
+      if (!shouldSkipErrorLogging(err)) {
+        console.error(err);
+      }
       res.status(500).send("Error: Can't delete entity");
     }
   }
@@ -96,7 +109,9 @@ class BaseController {
       });
       res.json(data);
     } catch (err) {
-      console.error(err);
+      if (!shouldSkipErrorLogging(err)) {
+        console.error(err);
+      }
       res.status(500).send("Error: Can't update entity");
     }
   }

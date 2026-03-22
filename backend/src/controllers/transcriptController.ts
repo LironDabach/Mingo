@@ -46,12 +46,11 @@ class transcriptController extends baseController {
 
       return res.status(201).json(result);
     } catch (error) {
-      console.error("Error during transcription:", error);
-
       if (error instanceof TranscriptProcessingError) {
         return res.status(error.statusCode).json({ error: error.message });
       }
 
+      console.error("Error during transcription:", error);
       return res.status(500).json({ error: "Transcription failed" });
     }
   }
@@ -71,12 +70,11 @@ class transcriptController extends baseController {
 
       return res.status(201).json(result);
     } catch (error) {
-      console.error("Error saving transcript text:", error);
-
       if (error instanceof TranscriptProcessingError) {
         return res.status(error.statusCode).json({ error: error.message });
       }
 
+      console.error("Error saving transcript text:", error);
       return res.status(500).json({ error: "Saving transcript text failed" });
     }
   }

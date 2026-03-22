@@ -95,7 +95,6 @@ class UsersController {
       const created = await User.create(payload);
       return res.status(201).json(toSafeUserObject(created));
     } catch (err: any) {
-      console.error(err);
       if (err?.code === 11000) {
         const duplicateField = Object.keys(err.keyPattern || {})[0];
         if (duplicateField === "githubId") {
@@ -103,6 +102,7 @@ class UsersController {
         }
         return res.status(400).send("Error: username or email already exists");
       }
+      console.error(err);
       return res.status(500).send("Error: Can't create user");
     }
   }
@@ -178,7 +178,6 @@ class UsersController {
 
       return res.json(toSafeUserObject(updated));
     } catch (err: any) {
-      console.error(err);
       if (err?.code === 11000) {
         const duplicateField = Object.keys(err.keyPattern || {})[0];
         if (duplicateField === "githubId") {
@@ -186,6 +185,7 @@ class UsersController {
         }
         return res.status(400).send("Error: username or email already exists");
       }
+      console.error(err);
       return res.status(500).send("Error: Can't update user");
     }
   }
