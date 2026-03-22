@@ -1,5 +1,3 @@
-/// <reference types="jest" />
-
 import mongoose from "mongoose";
 import {
   MingoAgentService,

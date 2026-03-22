@@ -22,11 +22,11 @@ app.use((req, res, next) => {
 });
 
 app.use("/api/meetings", meetingsRoute);
-app.use("/api/mingo-agent", mingoAgentRoute);
-app.use("/api/transcript", transcriptRoute);
-app.use("/api/tasks", tasksRoute);
+app.use("/api", mingoAgentRoute);
+app.use("/api", transcriptRoute);
+app.use("/api", tasksRoute);
 app.use("/api/auth", authRoute);
-app.use("/api/users", usersRoute);
+app.use("/api/user", usersRoute);
 app.use("/api/upload", express.static("public/uploads"));
 
 const distPath = path.resolve(__dirname, "../../../client/dist");

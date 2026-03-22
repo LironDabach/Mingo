@@ -1,5 +1,3 @@
-/// <reference types="jest" />
-
 import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";

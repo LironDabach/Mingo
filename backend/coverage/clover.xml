@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<coverage generated="1774203274139" clover="3.2.0">
-  <project timestamp="1774203274139" name="All files">
+<coverage generated="1774216504326" clover="3.2.0">
+  <project timestamp="1774216504326" name="All files">
     <metrics statements="1289" coveredstatements="941" conditionals="710" coveredconditionals="401" methods="171" coveredmethods="141" elements="2170" coveredelements="1483" complexity="0" loc="1289" ncloc="1289" packages="8" files="26" classes="26"/>
     <package name="src">
       <metrics statements="59" coveredstatements="53" conditionals="8" coveredconditionals="4" methods="11" coveredmethods="7"/>
@@ -24,50 +24,50 @@
         <line num="19" count="108" type="stmt"/>
         <line num="20" count="108" type="stmt"/>
         <line num="21" count="108" type="stmt"/>
+        <line num="24" count="7" type="stmt"/>
         <line num="25" count="7" type="stmt"/>
         <line num="26" count="7" type="stmt"/>
         <line num="27" count="7" type="stmt"/>
         <line num="28" count="7" type="stmt"/>
+        <line num="29" count="7" type="stmt"/>
+        <line num="30" count="7" type="stmt"/>
         <line num="32" count="7" type="stmt"/>
-        <line num="33" count="7" type="stmt"/>
-        <line num="35" count="7" type="stmt"/>
+        <line num="34" count="7" type="stmt"/>
+        <line num="36" count="7" type="stmt"/>
+        <line num="37" count="0" type="stmt"/>
+        <line num="40" count="7" type="stmt"/>
         <line num="41" count="7" type="stmt"/>
-        <line num="43" count="7" type="stmt"/>
-        <line num="45" count="7" type="stmt"/>
-        <line num="46" count="0" type="stmt"/>
-        <line num="49" count="7" type="stmt"/>
+        <line num="42" count="7" type="stmt"/>
+        <line num="43" count="7" type="cond" truecount="1" falsecount="1"/>
+        <line num="44" count="0" type="stmt"/>
+        <line num="45" count="0" type="stmt"/>
+        <line num="47" count="7" type="stmt"/>
         <line num="50" count="7" type="stmt"/>
-        <line num="51" count="7" type="stmt"/>
-        <line num="52" count="7" type="cond" truecount="1" falsecount="1"/>
-        <line num="53" count="0" type="stmt"/>
-        <line num="54" count="0" type="stmt"/>
         <line num="56" count="7" type="stmt"/>
-        <line num="59" count="7" type="stmt"/>
-        <line num="65" count="7" type="stmt"/>
-        <line num="68" count="0" type="stmt"/>
-        <line num="77" count="7" type="stmt"/>
-        <line num="78" count="7" type="stmt"/>
-        <line num="79" count="7" type="stmt"/>
-        <line num="81" count="7" type="stmt"/>
-        <line num="84" count="7" type="stmt"/>
+        <line num="59" count="0" type="stmt"/>
+        <line num="68" count="7" type="stmt"/>
+        <line num="69" count="7" type="stmt"/>
+        <line num="70" count="7" type="stmt"/>
+        <line num="72" count="7" type="stmt"/>
+        <line num="75" count="7" type="stmt"/>
       </file>
       <file name="swagger.ts" path="/Users/liron_dabach/Documents/לימודים/שנה ג׳/פרויקט גמר/Mingo/backend/src/swagger.ts">
         <metrics statements="15" coveredstatements="13" conditionals="2" coveredconditionals="2" methods="3" coveredmethods="2"/>
-        <line num="2" count="7" type="stmt"/>
-        <line num="3" count="7" type="stmt"/>
-        <line num="4" count="7" type="stmt"/>
-        <line num="6" count="7" type="stmt"/>
-        <line num="7" count="7" type="cond" truecount="2" falsecount="0"/>
-        <line num="9" count="7" type="stmt"/>
-        <line num="14" count="7" type="stmt"/>
-        <line num="305" count="7" type="stmt"/>
-        <line num="380" count="7" type="stmt"/>
-        <line num="391" count="7" type="stmt"/>
-        <line num="392" count="7" type="stmt"/>
-        <line num="394" count="7" type="stmt"/>
-        <line num="395" count="0" type="stmt"/>
-        <line num="396" count="0" type="stmt"/>
-        <line num="399" count="7" type="stmt"/>
+        <line num="2" count="8" type="stmt"/>
+        <line num="3" count="8" type="stmt"/>
+        <line num="4" count="8" type="stmt"/>
+        <line num="6" count="8" type="stmt"/>
+        <line num="7" count="8" type="cond" truecount="2" falsecount="0"/>
+        <line num="8" count="8" type="stmt"/>
+        <line num="13" count="8" type="stmt"/>
+        <line num="395" count="8" type="stmt"/>
+        <line num="466" count="8" type="stmt"/>
+        <line num="477" count="8" type="stmt"/>
+        <line num="478" count="7" type="stmt"/>
+        <line num="480" count="7" type="stmt"/>
+        <line num="481" count="0" type="stmt"/>
+        <line num="482" count="0" type="stmt"/>
+        <line num="485" count="7" type="stmt"/>
       </file>
     </package>
     <package name="src.controllers">
@@ -697,12 +697,12 @@
         <line num="1" count="7" type="stmt"/>
         <line num="2" count="7" type="stmt"/>
         <line num="4" count="7" type="stmt"/>
-        <line num="6" count="7" type="stmt"/>
-        <line num="8" count="7" type="stmt"/>
-        <line num="10" count="7" type="stmt"/>
-        <line num="12" count="7" type="stmt"/>
-        <line num="14" count="7" type="stmt"/>
-        <line num="16" count="7" type="stmt"/>
+        <line num="32" count="7" type="stmt"/>
+        <line num="66" count="7" type="stmt"/>
+        <line num="90" count="7" type="stmt"/>
+        <line num="124" count="7" type="stmt"/>
+        <line num="158" count="7" type="stmt"/>
+        <line num="160" count="7" type="stmt"/>
       </file>
       <file name="meetingsRoute.ts" path="/Users/liron_dabach/Documents/לימודים/שנה ג׳/פרויקט גמר/Mingo/backend/src/routes/meetingsRoute.ts">
         <metrics statements="15" coveredstatements="15" conditionals="0" coveredconditionals="0" methods="0" coveredmethods="0"/>
@@ -710,17 +710,17 @@
         <line num="2" count="7" type="stmt"/>
         <line num="3" count="7" type="stmt"/>
         <line num="5" count="7" type="stmt"/>
-        <line num="7" count="7" type="stmt"/>
-        <line num="8" count="7" type="stmt"/>
-        <line num="9" count="7" type="stmt"/>
-        <line num="11" count="7" type="stmt"/>
-        <line num="12" count="7" type="stmt"/>
-        <line num="13" count="7" type="stmt"/>
-        <line num="14" count="7" type="stmt"/>
-        <line num="16" count="7" type="stmt"/>
-        <line num="18" count="7" type="stmt"/>
-        <line num="20" count="7" type="stmt"/>
-        <line num="23" count="7" type="stmt"/>
+        <line num="45" count="7" type="stmt"/>
+        <line num="46" count="7" type="stmt"/>
+        <line num="121" count="7" type="stmt"/>
+        <line num="122" count="7" type="stmt"/>
+        <line num="123" count="7" type="stmt"/>
+        <line num="149" count="7" type="stmt"/>
+        <line num="175" count="7" type="stmt"/>
+        <line num="201" count="7" type="stmt"/>
+        <line num="225" count="7" type="stmt"/>
+        <line num="226" count="7" type="stmt"/>
+        <line num="228" count="7" type="stmt"/>
       </file>
       <file name="mingoAgentRoute.ts" path="/Users/liron_dabach/Documents/לימודים/שנה ג׳/פרויקט גמר/Mingo/backend/src/routes/mingoAgentRoute.ts">
         <metrics statements="9" coveredstatements="9" conditionals="0" coveredconditionals="0" methods="0" coveredmethods="0"/>
@@ -728,11 +728,11 @@
         <line num="2" count="7" type="stmt"/>
         <line num="3" count="7" type="stmt"/>
         <line num="5" count="7" type="stmt"/>
-        <line num="7" count="7" type="stmt"/>
-        <line num="9" count="7" type="stmt"/>
-        <line num="11" count="7" type="stmt"/>
-        <line num="13" count="7" type="stmt"/>
-        <line num="15" count="7" type="stmt"/>
+        <line num="29" count="7" type="stmt"/>
+        <line num="53" count="7" type="stmt"/>
+        <line num="77" count="7" type="stmt"/>
+        <line num="107" count="7" type="stmt"/>
+        <line num="109" count="7" type="stmt"/>
       </file>
       <file name="tasksRoute.ts" path="/Users/liron_dabach/Documents/לימודים/שנה ג׳/פרויקט גמר/Mingo/backend/src/routes/tasksRoute.ts">
         <metrics statements="11" coveredstatements="11" conditionals="0" coveredconditionals="0" methods="0" coveredmethods="0"/>
@@ -740,13 +740,13 @@
         <line num="2" count="7" type="stmt"/>
         <line num="3" count="7" type="stmt"/>
         <line num="5" count="7" type="stmt"/>
-        <line num="7" count="7" type="stmt"/>
-        <line num="8" count="7" type="stmt"/>
-        <line num="9" count="7" type="stmt"/>
-        <line num="11" count="7" type="stmt"/>
-        <line num="13" count="7" type="stmt"/>
-        <line num="15" count="7" type="stmt"/>
-        <line num="17" count="7" type="stmt"/>
+        <line num="55" count="7" type="stmt"/>
+        <line num="56" count="7" type="stmt"/>
+        <line num="137" count="7" type="stmt"/>
+        <line num="138" count="7" type="stmt"/>
+        <line num="139" count="7" type="stmt"/>
+        <line num="165" count="7" type="stmt"/>
+        <line num="167" count="7" type="stmt"/>
       </file>
       <file name="transcriptRoute.ts" path="/Users/liron_dabach/Documents/לימודים/שנה ג׳/פרויקט גמר/Mingo/backend/src/routes/transcriptRoute.ts">
         <metrics statements="9" coveredstatements="9" conditionals="0" coveredconditionals="0" methods="0" coveredmethods="0"/>
@@ -755,10 +755,10 @@
         <line num="3" count="7" type="stmt"/>
         <line num="4" count="7" type="stmt"/>
         <line num="6" count="7" type="stmt"/>
-        <line num="8" count="7" type="stmt"/>
-        <line num="14" count="7" type="stmt"/>
-        <line num="21" count="7" type="stmt"/>
-        <line num="27" count="7" type="stmt"/>
+        <line num="30" count="7" type="stmt"/>
+        <line num="74" count="7" type="stmt"/>
+        <line num="103" count="7" type="stmt"/>
+        <line num="109" count="7" type="stmt"/>
       </file>
       <file name="usersRoute.ts" path="/Users/liron_dabach/Documents/לימודים/שנה ג׳/פרויקט גמר/Mingo/backend/src/routes/usersRoute.ts">
         <metrics statements="11" coveredstatements="11" conditionals="0" coveredconditionals="0" methods="0" coveredmethods="0"/>
@@ -767,12 +767,12 @@
         <line num="3" count="7" type="stmt"/>
         <line num="4" count="7" type="stmt"/>
         <line num="6" count="7" type="stmt"/>
-        <line num="8" count="7" type="stmt"/>
-        <line num="10" count="7" type="stmt"/>
-        <line num="12" count="7" type="stmt"/>
-        <line num="19" count="7" type="stmt"/>
-        <line num="26" count="7" type="stmt"/>
         <line num="28" count="7" type="stmt"/>
+        <line num="56" count="7" type="stmt"/>
+        <line num="84" count="7" type="stmt"/>
+        <line num="127" count="7" type="stmt"/>
+        <line num="162" count="7" type="stmt"/>
+        <line num="164" count="7" type="stmt"/>
       </file>
     </package>
     <package name="src.services.LLM">
@@ -804,7 +804,7 @@
         <line num="74" count="12" type="stmt"/>
         <line num="75" count="12" type="stmt"/>
         <line num="76" count="12" type="stmt"/>
-        <line num="77" count="20" type="stmt"/>
+        <line num="77" count="19" type="stmt"/>
         <line num="79" count="12" type="stmt"/>
         <line num="80" count="12" type="cond" truecount="1" falsecount="1"/>
         <line num="81" count="12" type="stmt"/>

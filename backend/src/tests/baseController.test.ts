@@ -1,5 +1,3 @@
-/// <reference types="jest" />
-
 import path from "path";
 import dotenv from "dotenv";
 import express, { Express } from "express";

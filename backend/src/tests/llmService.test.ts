@@ -1,5 +1,3 @@
-/// <reference types="jest" />
-
 import http from "http";
 import { AddressInfo } from "net";
 import { LlmService, LlmServiceError } from "../services/LLM/llmService";
