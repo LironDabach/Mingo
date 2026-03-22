@@ -21,22 +21,13 @@ app.use((req, res, next) => {
   next();
 });
 
-// // API routes
 app.use("/api/meetings", meetingsRoute);
-app.use("/api", mingoAgentRoute);
-app.use("/api", transcriptRoute);
-app.use("/api", tasksRoute);
-
-// app.use("/api/comment", commentsRoute);
-// app.use("/api/like", likesRoute);
+app.use("/api/mingo-agent", mingoAgentRoute);
+app.use("/api/transcript", transcriptRoute);
+app.use("/api/tasks", tasksRoute);
 app.use("/api/auth", authRoute);
-app.use("/api/user", usersRoute);
-
+app.use("/api/users", usersRoute);
 app.use("/api/upload", express.static("public/uploads"));
-// app.use("/api/upload", multerRoute);
-
-// Serve React static files
-//const distPath = path.resolve(__dirname, "../../client/dist");
 
 const distPath = path.resolve(__dirname, "../../../client/dist");
 
