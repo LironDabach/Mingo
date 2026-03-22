@@ -10,6 +10,8 @@
     "testMeeting": "tsc && jest --runInBand --detectOpenHandles --forceExit ./src/tests/meetings.test.ts",
     "testTranscript": "tsc && jest --runInBand --detectOpenHandles --forceExit ./src/tests/transcript.test.ts",
     "testMingoAgent": "tsc && jest --runInBand --detectOpenHandles --forceExit ./src/tests/mingoAgent.test.ts",
+    "testUsers": "tsc && jest --runInBand --detectOpenHandles --forceExit ./src/tests/users.test.ts",
+    "testAuth": "tsc && jest --runInBand --detectOpenHandles --forceExit ./src/tests/auth.test.ts",
     "jestCoverage": "jest --coverage --runInBand --detectOpenHandles --forceExit",
     "prod": "cp ../.env.production .env && tsc -p tsconfig_prod.json && pm2 restart ecosystem.config.js --env production"
   },

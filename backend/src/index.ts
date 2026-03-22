@@ -3,6 +3,8 @@ import mongoose from "mongoose";
 import meetingsRoute from "./routes/meetingsRoute";
 import mingoAgentRoute from "./routes/mingoAgentRoute";
 import transcriptRoute from "./routes/transcriptRoute";
+import authRoute from "./routes/authRoute";
+import usersRoute from "./routes/usersRoute";
 
 import { setupSwagger } from "./swagger";
 import path from "path";
@@ -25,10 +27,10 @@ app.use("/api", transcriptRoute);
 
 // app.use("/api/comment", commentsRoute);
 // app.use("/api/like", likesRoute);
-// app.use("/api/auth", authRoute);
-// app.use("/api/user", usersRoute);
+app.use("/api/auth", authRoute);
+app.use("/api/user", usersRoute);
 
-// app.use("/api/upload", express.static("public/uploads"));
+app.use("/api/upload", express.static("public/uploads"));
 // app.use("/api/upload", multerRoute);
 
 // Serve React static files
