@@ -40,7 +40,11 @@ class mingoAgentController extends baseController {
     }
 
     try {
-      const result = await mingoAgentService.generateReply(meetingId, message);
+      const result = await mingoAgentService.generateReply(
+        meetingId,
+        message,
+        req.user?._id,
+      );
       res.json({ reply: result.reply });
     } catch (err) {
       console.error(err);
