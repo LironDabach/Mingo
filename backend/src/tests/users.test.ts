@@ -1,6 +1,7 @@
 /// <reference types="jest" />
 
 import path from "path";
+import fs from "fs";
 import dotenv from "dotenv";
 import request from "supertest";
 import bcrypt from "bcrypt";
@@ -9,6 +10,7 @@ import mongoose from "mongoose";
 import { Express } from "express";
 import initApp from "../index";
 import usersModel from "../models/usersModel";
+import { uploadsDir } from "../services/Picture/uploadPictureService";
 
 jest.setTimeout(30000);
 
@@ -17,10 +19,20 @@ let jwtSecret: string;
 let ownerId: string;
 let otherUserId: string;
 let deleteUserId: string;
+let userWithPictureId: string;
 let authToken: string;
 let otherAuthToken: string;
 let deleteUserAuthToken: string;
+let pictureUserAuthToken: string;
 const createdUserIds: string[] = [];
+const createdUploadPaths: string[] = [];
+const suiteSeed = new mongoose.Types.ObjectId().toString();
+const imageFixturePath = path.resolve(
+  __dirname,
+  "../../coverage/lcov-report/favicon.png",
+);
+
+const uniqueValue = (prefix: string) => `${prefix}_${suiteSeed}`;
 
 beforeAll(async () => {
   dotenv.config({
@@ -35,25 +47,30 @@ beforeAll(async () => {
 
   app = await initApp();
 
-  const suffix = Date.now();
   const hashedPassword = await bcrypt.hash("Pass1234!", 10);
 
-  const [ownerUser, otherUser, deleteUser] = await usersModel.create([
+  const [ownerUser, otherUser, deleteUser, pictureUser] = await usersModel.create([
     {
-      username: `users_owner_${suffix}`,
-      email: `users_owner_${suffix}@example.com`,
+      username: uniqueValue("users_owner"),
+      email: `${uniqueValue("users_owner")}@example.com`,
       password: hashedPassword,
       refreshTokens: [],
     },
     {
-      username: `users_other_${suffix}`,
-      email: `users_other_${suffix}@example.com`,
+      username: uniqueValue("users_other"),
+      email: `${uniqueValue("users_other")}@example.com`,
       password: hashedPassword,
       refreshTokens: [],
     },
     {
-      username: `users_delete_${suffix}`,
-      email: `users_delete_${suffix}@example.com`,
+      username: uniqueValue("users_delete"),
+      email: `${uniqueValue("users_delete")}@example.com`,
+      password: hashedPassword,
+      refreshTokens: [],
+    },
+    {
+      username: uniqueValue("users_picture"),
+      email: `${uniqueValue("users_picture")}@example.com`,
       password: hashedPassword,
       refreshTokens: [],
     },
@@ -62,17 +79,27 @@ beforeAll(async () => {
   ownerId = ownerUser!._id.toString();
   otherUserId = otherUser!._id.toString();
   deleteUserId = deleteUser!._id.toString();
+  userWithPictureId = pictureUser!._id.toString();
 
-  createdUserIds.push(ownerId, otherUserId, deleteUserId);
+  createdUserIds.push(ownerId, otherUserId, deleteUserId, userWithPictureId);
 
   authToken = jwt.sign({ _id: ownerId }, jwtSecret, { expiresIn: "1h" });
   otherAuthToken = jwt.sign({ _id: otherUserId }, jwtSecret, { expiresIn: "1h" });
   deleteUserAuthToken = jwt.sign({ _id: deleteUserId }, jwtSecret, {
     expiresIn: "1h",
   });
+  pictureUserAuthToken = jwt.sign({ _id: userWithPictureId }, jwtSecret, {
+    expiresIn: "1h",
+  });
 }, 30000);
 
 afterAll(async () => {
+  createdUploadPaths.forEach((uploadPath) => {
+    if (fs.existsSync(uploadPath)) {
+      fs.unlinkSync(uploadPath);
+    }
+  });
+
   if (createdUserIds.length > 0) {
     await usersModel.deleteMany({ _id: { $in: createdUserIds } });
   }
@@ -153,8 +180,8 @@ describe("Users API", () => {
         .post("/api/user")
         .set("Authorization", `Bearer ${authToken}`)
         .send({
-          username: `invalid_fields_${Date.now()}`,
-          email: `invalid_fields_${Date.now()}@example.com`,
+          username: uniqueValue("invalid_fields"),
+          email: `${uniqueValue("invalid_fields")}@example.com`,
           role: "admin",
         });
 
@@ -162,13 +189,39 @@ describe("Users API", () => {
       expect(response.text).toBe("Error: Invalid fields in request");
     });
 
+    test("returns 400 when username or email is missing", async () => {
+      const response = await request(app)
+        .post("/api/user")
+        .set("Authorization", `Bearer ${authToken}`)
+        .send({
+          username: "",
+          email: "",
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.text).toBe("Error: username and email are required");
+    });
+
+    test("returns 400 when email is invalid", async () => {
+      const response = await request(app)
+        .post("/api/user")
+        .set("Authorization", `Bearer ${authToken}`)
+        .send({
+          username: uniqueValue("users_invalid_email"),
+          email: "not-an-email",
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.text).toBe("Error: invalid email");
+    });
+
     test("creates a new user", async () => {
       const response = await request(app)
         .post("/api/user")
         .set("Authorization", `Bearer ${authToken}`)
         .send({
-          username: `users_created_${Date.now()}`,
-          email: `users_created_${Date.now()}@example.com`,
+          username: uniqueValue("users_created"),
+          email: `${uniqueValue("users_created")}@example.com`,
           password: "Pass1234!",
         });
 
@@ -186,6 +239,28 @@ describe("Users API", () => {
       expect(savedUser?.password).not.toBe("Pass1234!");
     });
 
+    test("creates a user with a profile picture upload", async () => {
+      const response = await request(app)
+        .post("/api/user")
+        .set("Authorization", `Bearer ${authToken}`)
+        .field("username", uniqueValue("users_uploaded"))
+        .field("email", `${uniqueValue("users_uploaded")}@example.com`)
+        .attach("file", imageFixturePath);
+
+      expect(response.status).toBe(201);
+      expect(response.body.profilePicture).toContain("/api/upload/");
+
+      createdUserIds.push(response.body._id);
+
+      const savedUser = await usersModel.findById(response.body._id);
+      expect(savedUser?.profilePicture).toBe(response.body.profilePicture);
+
+      const fileName = response.body.profilePicture.split("/api/upload/")[1];
+      const uploadPath = path.resolve(process.cwd(), uploadsDir, fileName);
+      createdUploadPaths.push(uploadPath);
+      expect(fs.existsSync(uploadPath)).toBe(true);
+    });
+
     test("returns 400 for duplicate username or email", async () => {
       const ownerUser = await usersModel.findById(ownerId);
 
@@ -199,6 +274,34 @@ describe("Users API", () => {
 
       expect(response.status).toBe(400);
       expect(response.text).toBe("Error: username or email already exists");
+    });
+
+    test("returns 400 for duplicate githubId", async () => {
+      const duplicateGithubId = uniqueValue("shared-github");
+
+      const firstResponse = await request(app)
+        .post("/api/user")
+        .set("Authorization", `Bearer ${authToken}`)
+        .send({
+          username: uniqueValue("users_github_one"),
+          email: `${uniqueValue("users_github_one")}@example.com`,
+          githubId: duplicateGithubId,
+        });
+
+      expect(firstResponse.status).toBe(201);
+      createdUserIds.push(firstResponse.body._id);
+
+      const secondResponse = await request(app)
+        .post("/api/user")
+        .set("Authorization", `Bearer ${authToken}`)
+        .send({
+          username: uniqueValue("users_github_two"),
+          email: `${uniqueValue("users_github_two")}@example.com`,
+          githubId: duplicateGithubId,
+        });
+
+      expect(secondResponse.status).toBe(400);
+      expect(secondResponse.text).toBe("Error: githubId already exists");
     });
   });
 
@@ -216,7 +319,7 @@ describe("Users API", () => {
         .put(`/api/user/${ownerId}`)
         .set("Authorization", `Bearer ${otherAuthToken}`)
         .send({
-          username: `forbidden_update_${Date.now()}`,
+          username: uniqueValue("forbidden_update"),
         });
 
       expect(response.status).toBe(403);
@@ -235,13 +338,42 @@ describe("Users API", () => {
       expect(response.text).toBe("Error: Invalid fields in request");
     });
 
+    test("returns 404 when updating a non-existent user", async () => {
+      const missingUserId = new mongoose.Types.ObjectId().toString();
+      const missingUserToken = jwt.sign({ _id: missingUserId }, jwtSecret, {
+        expiresIn: "1h",
+      });
+
+      const response = await request(app)
+        .put(`/api/user/${missingUserId}`)
+        .set("Authorization", `Bearer ${missingUserToken}`)
+        .send({
+          username: uniqueValue("users_missing"),
+        });
+
+      expect(response.status).toBe(404);
+      expect(response.text).toBe("Error: User not found");
+    });
+
+    test("returns 400 when updating with an invalid email", async () => {
+      const response = await request(app)
+        .put(`/api/user/${ownerId}`)
+        .set("Authorization", `Bearer ${authToken}`)
+        .send({
+          email: "bad-email",
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.text).toBe("Error: invalid email");
+    });
+
     test("updates the authenticated user", async () => {
       const response = await request(app)
         .put(`/api/user/${ownerId}`)
         .set("Authorization", `Bearer ${authToken}`)
         .send({
-          username: `users_owner_updated_${Date.now()}`,
-          email: `users_owner_updated_${Date.now()}@example.com`,
+          username: uniqueValue("users_owner_updated"),
+          email: `${uniqueValue("users_owner_updated")}@example.com`,
           password: "NewPass1234!",
         });
 
@@ -260,6 +392,104 @@ describe("Users API", () => {
         await bcrypt.compare("NewPass1234!", savedUser?.password || ""),
       ).toBe(true);
     });
+
+    test("updates a user profile picture and removes the previous file on replacement", async () => {
+      const initialResponse = await request(app)
+        .put(`/api/user/${userWithPictureId}`)
+        .set("Authorization", `Bearer ${pictureUserAuthToken}`)
+        .field("username", uniqueValue("users_picture_first"))
+        .attach("file", imageFixturePath);
+
+      expect(initialResponse.status).toBe(200);
+      expect(initialResponse.body.profilePicture).toContain("/api/upload/");
+
+      const firstFileName = initialResponse.body.profilePicture.split("/api/upload/")[1];
+      const firstUploadPath = path.resolve(process.cwd(), uploadsDir, firstFileName);
+      expect(fs.existsSync(firstUploadPath)).toBe(true);
+
+      const replacementResponse = await request(app)
+        .put(`/api/user/${userWithPictureId}`)
+        .set("Authorization", `Bearer ${pictureUserAuthToken}`)
+        .field("username", uniqueValue("users_picture_second"))
+        .attach("file", imageFixturePath);
+
+      expect(replacementResponse.status).toBe(200);
+      expect(replacementResponse.body.profilePicture).toContain("/api/upload/");
+      expect(replacementResponse.body.profilePicture).not.toBe(
+        initialResponse.body.profilePicture,
+      );
+      expect(fs.existsSync(firstUploadPath)).toBe(false);
+
+      const secondFileName =
+        replacementResponse.body.profilePicture.split("/api/upload/")[1];
+      const secondUploadPath = path.resolve(process.cwd(), uploadsDir, secondFileName);
+      createdUploadPaths.push(secondUploadPath);
+      expect(fs.existsSync(secondUploadPath)).toBe(true);
+    });
+
+    test("removes the existing profile picture when requested", async () => {
+      const currentUser = await usersModel.findById(userWithPictureId);
+      const currentProfilePicture = currentUser?.profilePicture || "";
+      const currentFileName =
+        currentProfilePicture.split("/api/upload/")[1] || "";
+      const currentUploadPath = path.resolve(process.cwd(), uploadsDir, currentFileName);
+
+      const response = await request(app)
+        .put(`/api/user/${userWithPictureId}`)
+        .set("Authorization", `Bearer ${pictureUserAuthToken}`)
+        .send({
+          removeProfilePicture: true,
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.profilePicture).toBeUndefined();
+      expect(fs.existsSync(currentUploadPath)).toBe(false);
+
+      const updatedUser = await usersModel.findById(userWithPictureId);
+      expect(updatedUser?.profilePicture).toBeUndefined();
+    });
+
+    test("ignores an empty password on update", async () => {
+      const userBeforeUpdate = await usersModel.findById(ownerId);
+
+      const response = await request(app)
+        .put(`/api/user/${ownerId}`)
+        .set("Authorization", `Bearer ${authToken}`)
+        .send({
+          password: "",
+        });
+
+      expect(response.status).toBe(200);
+
+      const userAfterUpdate = await usersModel.findById(ownerId);
+      expect(userAfterUpdate?.password).toBe(userBeforeUpdate?.password);
+    });
+
+    test("returns 400 when updating to a duplicate githubId", async () => {
+      const duplicateGithubId = uniqueValue("update-github");
+
+      const seedResponse = await request(app)
+        .post("/api/user")
+        .set("Authorization", `Bearer ${authToken}`)
+        .send({
+          username: uniqueValue("users_dup_github_seed"),
+          email: `${uniqueValue("users_dup_github_seed")}@example.com`,
+          githubId: duplicateGithubId,
+        });
+
+      expect(seedResponse.status).toBe(201);
+      createdUserIds.push(seedResponse.body._id);
+
+      const response = await request(app)
+        .put(`/api/user/${ownerId}`)
+        .set("Authorization", `Bearer ${authToken}`)
+        .send({
+          githubId: duplicateGithubId,
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.text).toBe("Error: githubId already exists");
+    });
   });
 
   describe("DELETE /api/user/:id", () => {
@@ -276,6 +506,20 @@ describe("Users API", () => {
 
       expect(response.status).toBe(403);
       expect(response.text).toBe("Forbidden: Not the user owner");
+    });
+
+    test("returns 404 when deleting a non-existent user", async () => {
+      const missingUserId = new mongoose.Types.ObjectId().toString();
+      const missingUserToken = jwt.sign({ _id: missingUserId }, jwtSecret, {
+        expiresIn: "1h",
+      });
+
+      const response = await request(app)
+        .delete(`/api/user/${missingUserId}`)
+        .set("Authorization", `Bearer ${missingUserToken}`);
+
+      expect(response.status).toBe(404);
+      expect(response.text).toBe("Error: User not found");
     });
 
     test("deletes the authenticated user", async () => {

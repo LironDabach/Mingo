@@ -55,6 +55,9 @@ class MingoAgentService {
   private static readonly MAX_RELATED_MEETINGS = 3;
   private static readonly RELATED_MEETINGS_LOOKBACK = 20;
   private static readonly MAX_PLANNER_KEYWORDS = 8;
+  private static readonly LLM_TIMEOUT_MS = Number(
+    process.env.MINGO_AGENT_LLM_TIMEOUT_MS || "5000",
+  );
 
   private meetings = meetingsModel;
   private chats = mingoAgentModel;
@@ -286,16 +289,13 @@ class MingoAgentService {
       return normalizedTopics as TopicItem[];
     }
 
-    const taskTopics = Array.isArray(meeting?.tasks)
-      ? meeting.tasks
-          .filter((task: unknown) => typeof task === "string")
-          .map((task: string) => ({
-            title: task.trim(),
-            description: `Action item discussed in the meeting: ${task.trim()}.`,
-          }))
-          .filter((topic: TopicItem) => Boolean(topic.title))
-          .slice(0, 5)
-      : [];
+    const taskTopics = this.extractTaskLabels(meeting?.tasks)
+      .map((task) => ({
+        title: task.trim(),
+        description: `Action item discussed in the meeting: ${task.trim()}.`,
+      }))
+      .filter((topic: TopicItem) => Boolean(topic.title))
+      .slice(0, 5);
 
     if (taskTopics.length) {
       return taskTopics;
@@ -361,6 +361,141 @@ class MingoAgentService {
     return String(value);
   }
 
+  private async runLlmGenerate(options: Parameters<LlmService["generate"]>[0]) {
+    return Promise.race([
+      this.llm.generate(options),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error("Mingo LLM request timed out"));
+        }, MingoAgentService.LLM_TIMEOUT_MS);
+      }),
+    ]);
+  }
+
+  private extractTaskLabels(tasks: unknown) {
+    if (!Array.isArray(tasks)) {
+      return [] as string[];
+    }
+
+    return tasks
+      .map((task) => {
+        if (typeof task === "string") {
+          return task.trim();
+        }
+
+        if (task && typeof task === "object") {
+          const record = task as {
+            title?: unknown;
+            gitHubRepoName?: unknown;
+            gitHubIssueId?: unknown;
+          };
+
+          if (typeof record.title === "string" && record.title.trim()) {
+            return record.title.trim();
+          }
+
+          const repoName =
+            typeof record.gitHubRepoName === "string"
+              ? record.gitHubRepoName.trim()
+              : "";
+          const issueId =
+            typeof record.gitHubIssueId === "number" ||
+            typeof record.gitHubIssueId === "string"
+              ? String(record.gitHubIssueId).trim()
+              : "";
+
+          if (repoName && issueId) {
+            return `${repoName} issue ${issueId}`;
+          }
+
+          if (repoName) {
+            return repoName;
+          }
+        }
+
+        return "";
+      })
+      .filter(Boolean);
+  }
+
+  private extractTopicLabels(topics: unknown) {
+    if (!Array.isArray(topics)) {
+      return [] as string[];
+    }
+
+    return topics
+      .map((topic) => this.normalizeTopicItem(topic)?.title || "")
+      .filter(Boolean);
+  }
+
+  private buildFallbackReply(
+    meeting: any,
+    userMessage: string,
+    relatedMeetings: any[],
+  ) {
+    const normalizedMessage = userMessage.toLowerCase();
+    const topics = this.extractTopicLabels(meeting?.topics);
+    const tasks = this.extractTaskLabels(meeting?.tasks);
+    const actionItems = [...topics, ...tasks].filter(
+      (value, index, array) => array.indexOf(value) === index,
+    );
+    const meetingTitle =
+      typeof meeting?.title === "string" && meeting.title.trim()
+        ? meeting.title.trim()
+        : "this meeting";
+
+    if (
+      /\b(action items?|tasks?|timeline|next steps?|follow[- ]?ups?)\b/.test(
+        normalizedMessage,
+      )
+    ) {
+      if (actionItems.length > 0) {
+        return `For ${meetingTitle}, the key action items are ${actionItems.join(", ")}.`;
+      }
+
+      return `I don't see explicit action items recorded for ${meetingTitle}.`;
+    }
+
+    if (/\bsummary|decisions?|key points?\b/.test(normalizedMessage)) {
+      if (actionItems.length > 0) {
+        return `${meetingTitle} focused on ${actionItems.join(", ")}.`;
+      }
+
+      return `${meetingTitle} is available, but I don't see enough structured detail to summarize decisions confidently.`;
+    }
+
+    if (relatedMeetings.length > 0) {
+      return `I couldn't reach the model, but related meetings include ${relatedMeetings
+        .map((relatedMeeting) => relatedMeeting?.title)
+        .filter(Boolean)
+        .join(", ")}.`;
+    }
+
+    if (actionItems.length > 0) {
+      return `From ${meetingTitle}, I can confirm ${actionItems.join(", ")}.`;
+    }
+
+    return `I couldn't reach the model, but the available context for ${meetingTitle} is still limited.`;
+  }
+
+  private buildFallbackSummary(meeting: any) {
+    const meetingTitle =
+      typeof meeting?.title === "string" && meeting.title.trim()
+        ? meeting.title.trim()
+        : "This meeting";
+    const topics = this.extractTopicLabels(meeting?.topics);
+    const tasks = this.extractTaskLabels(meeting?.tasks);
+    const discussionPoints = [...topics, ...tasks].filter(
+      (value, index, array) => array.indexOf(value) === index,
+    );
+
+    if (discussionPoints.length > 0) {
+      return `${meetingTitle} covered ${discussionPoints.join(", ")}.`;
+    }
+
+    return `${meetingTitle} took place on ${this.meetingDateToIso(meeting?.date)}. No additional structured summary details are available.`;
+  }
+
   private meetingDateToIso(value: unknown) {
     if (value instanceof Date) {
       return value.toISOString();
@@ -391,7 +526,7 @@ class MingoAgentService {
   private buildSearchText(meeting: any) {
     const parts = [
       meeting?.title,
-      ...(Array.isArray(meeting?.tasks) ? meeting.tasks : []),
+      ...this.extractTaskLabels(meeting?.tasks),
       ...(Array.isArray(meeting?.topics)
         ? meeting.topics.map((topic: unknown) =>
             typeof topic === "string"
@@ -574,7 +709,7 @@ class MingoAgentService {
     ].join("\n");
 
     try {
-      const response = await this.llm.generate({
+      const response = await this.runLlmGenerate({
         prompt: plannerPrompt,
         format: "json",
         options: {
@@ -909,7 +1044,7 @@ class MingoAgentService {
 
     let reply = "";
     try {
-      const response = await this.llm.generate({
+      const response = await this.runLlmGenerate({
         prompt,
         options: {
           temperature: 0.2,
@@ -923,12 +1058,15 @@ class MingoAgentService {
       if (error instanceof MingoAgentError) {
         throw error;
       }
-
-      throw new MingoAgentError("Failed to generate Mingo response", 503);
+      reply = this.buildFallbackReply(
+        meeting,
+        normalizedMessage,
+        relatedMeetings,
+      );
     }
 
     if (!reply) {
-      throw new MingoAgentError("The LLM returned an empty response", 502);
+      reply = this.buildFallbackReply(meeting, normalizedMessage, relatedMeetings);
     }
 
     const assistantMessage: ChatMessage = {
@@ -988,7 +1126,7 @@ class MingoAgentService {
 
     let summary = "";
     try {
-      const response = await this.llm.generate({
+      const response = await this.runLlmGenerate({
         prompt: summaryPrompt,
         options: {
           temperature: 0.2,
@@ -1002,12 +1140,11 @@ class MingoAgentService {
       if (error instanceof MingoAgentError) {
         throw error;
       }
-
-      throw new MingoAgentError("Failed to generate Mingo summary", 503);
+      summary = this.buildFallbackSummary(meeting);
     }
 
     if (!summary) {
-      throw new MingoAgentError("The LLM returned an empty summary", 502);
+      summary = this.buildFallbackSummary(meeting);
     }
 
     return { summary };
@@ -1050,7 +1187,7 @@ class MingoAgentService {
     let topicsResponse = "";
     try {
       try {
-        const response = await this.llm.generate({
+        const response = await this.runLlmGenerate({
           prompt: topicsPrompt,
           format: "json",
           options: {
@@ -1062,7 +1199,7 @@ class MingoAgentService {
 
         topicsResponse = this.normalizeAssistantResponse(response.response);
       } catch {
-        const response = await this.llm.generate({
+        const response = await this.runLlmGenerate({
           prompt: topicsPrompt,
           options: {
             temperature: 0.2,
@@ -1091,12 +1228,7 @@ class MingoAgentService {
       const topics = this.parseTopicsResponse(topicsResponse);
       return { topics };
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : String(error);
-      throw new MingoAgentError(
-        "Failed to parse topics response from LLM: " + message,
-        502,
-      );
+      return { topics: this.buildFallbackTopics(meeting) };
     }
 
   }

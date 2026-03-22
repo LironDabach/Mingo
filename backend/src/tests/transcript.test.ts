@@ -14,10 +14,14 @@ jest.setTimeout(30000);
 
 let app: Express;
 let authToken: string;
+let otherAuthToken: string;
 let jwtSecret: string;
 const userId = new mongoose.Types.ObjectId().toString();
+const otherUserId = new mongoose.Types.ObjectId().toString();
 let createdMeetingId: string;
 let createdTranscriptId: string;
+const createdMeetingIds: string[] = [];
+const createdTranscriptIds: string[] = [];
 
 beforeAll(async () => {
   dotenv.config({
@@ -32,16 +36,17 @@ beforeAll(async () => {
 
   app = await initApp();
   authToken = jwt.sign({ _id: userId }, jwtSecret, { expiresIn: "1h" });
+  otherAuthToken = jwt.sign({ _id: otherUserId }, jwtSecret, { expiresIn: "1h" });
 }, 30000);
 
 afterAll(async () => {
-  if (createdTranscriptId) {
-    await transcriptModel.deleteMany({ _id: createdTranscriptId });
+  if (createdTranscriptIds.length > 0) {
+    await transcriptModel.deleteMany({ _id: { $in: createdTranscriptIds } });
   }
 
-  if (createdMeetingId) {
-    await transcriptModel.deleteMany({ meetingID: createdMeetingId });
-    await meetingsModel.deleteMany({ _id: createdMeetingId });
+  if (createdMeetingIds.length > 0) {
+    await transcriptModel.deleteMany({ meetingID: { $in: createdMeetingIds } });
+    await meetingsModel.deleteMany({ _id: { $in: createdMeetingIds } });
   }
 
   await mongoose.connection.close();
@@ -113,6 +118,8 @@ describe("Transcript API", () => {
 
       createdMeetingId = response.body.meeting._id;
       createdTranscriptId = response.body.transcript._id;
+      createdMeetingIds.push(createdMeetingId);
+      createdTranscriptIds.push(createdTranscriptId);
 
       const savedMeeting = await meetingsModel.findById(createdMeetingId);
       const savedTranscript = await transcriptModel.findById(createdTranscriptId);
@@ -130,6 +137,28 @@ describe("Transcript API", () => {
       expect(savedTranscript?.content).toBe(
         "We agreed to finalize the roadmap next week.",
       );
+    });
+
+    test("creates a meeting with default title and current date when omitted", async () => {
+      const beforeRequest = Date.now();
+
+      const response = await request(app)
+        .post("/api/transcript/text")
+        .set("Authorization", `Bearer ${otherAuthToken}`)
+        .send({
+          content: "Notes without an explicit title.",
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body.meeting.title).toBe("Untitled Meeting");
+      expect(response.body.text).toBe("Notes without an explicit title.");
+
+      createdMeetingIds.push(response.body.meeting._id);
+      createdTranscriptIds.push(response.body.transcript._id);
+
+      const savedTranscript = await transcriptModel.findById(response.body.transcript._id);
+      expect(savedTranscript).not.toBeNull();
+      expect(savedTranscript?.date.getTime()).toBeGreaterThanOrEqual(beforeRequest - 1000);
     });
   });
 
@@ -151,6 +180,29 @@ describe("Transcript API", () => {
       expect(response.body.content).toBe(
         "We agreed to finalize the roadmap next week.",
       );
+    });
+
+    test("returns null when the meeting has no transcript", async () => {
+      const response = await request(app)
+        .get(`/api/transcripts/${new mongoose.Types.ObjectId().toString()}`)
+        .set("Authorization", `Bearer ${authToken}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toBeNull();
+    });
+  });
+
+  describe("POST /api/transcript/mp3", () => {
+    test("returns 400 when no audio file is uploaded", async () => {
+      const response = await request(app)
+        .post("/api/transcript/mp3")
+        .set("Authorization", `Bearer ${authToken}`)
+        .send({
+          title: "Audio without file",
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe("No file uploaded");
     });
   });
 });
