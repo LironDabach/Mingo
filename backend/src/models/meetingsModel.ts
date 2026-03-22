@@ -38,7 +38,8 @@ const meetingSchema = new mongoose.Schema({
   ],
   tasks: [
     {
-      type: String,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "task",
     },
   ],
   mingoAgentId: {

@@ -5,6 +5,7 @@ import mingoAgentRoute from "./routes/mingoAgentRoute";
 import transcriptRoute from "./routes/transcriptRoute";
 import authRoute from "./routes/authRoute";
 import usersRoute from "./routes/usersRoute";
+import tasksRoute from "./routes/tasksRoute";
 
 import { setupSwagger } from "./swagger";
 import path from "path";
@@ -24,6 +25,7 @@ app.use((req, res, next) => {
 app.use("/api/meetings", meetingsRoute);
 app.use("/api", mingoAgentRoute);
 app.use("/api", transcriptRoute);
+app.use("/api", tasksRoute);
 
 // app.use("/api/comment", commentsRoute);
 // app.use("/api/like", likesRoute);
