@@ -17,6 +17,9 @@ let jwtSecret: string;
 const userId = new mongoose.Types.ObjectId().toString();
 const otherUserId = new mongoose.Types.ObjectId().toString();
 const createdMeetingIds: string[] = [];
+let upcomingMeetingId: string;
+let oldMeetingId: string;
+let noDurationMeetingId: string;
 
 beforeAll(async () => {
   dotenv.config({
@@ -53,9 +56,41 @@ beforeAll(async () => {
       topics: [],
       tasks: ["Capture action items"],
     },
+    {
+      title: "Upcoming Review",
+      date: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      duration: 90,
+      organizerId: otherUserId,
+      participants: [userId, otherUserId],
+      transcriptId: new mongoose.Types.ObjectId(),
+      topics: [],
+      tasks: ["Prepare demo"],
+    },
+    {
+      title: "Quarterly Kickoff",
+      date: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000),
+      duration: 120,
+      organizerId: userId,
+      participants: [userId],
+      transcriptId: new mongoose.Types.ObjectId(),
+      topics: [],
+      tasks: ["Share quarterly goals"],
+    },
+    {
+      title: "No Duration Meeting",
+      date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+      organizerId: userId,
+      participants: [userId],
+      transcriptId: new mongoose.Types.ObjectId(),
+      topics: [],
+      tasks: ["No timing recorded"],
+    },
   ]);
 
   createdMeetingIds.push(...seededMeetings.map((meeting) => meeting._id.toString()));
+  upcomingMeetingId = seededMeetings[2]!._id.toString();
+  oldMeetingId = seededMeetings[3]!._id.toString();
+  noDurationMeetingId = seededMeetings[4]!._id.toString();
 }, 30000);
 
 afterAll(async () => {
@@ -130,6 +165,86 @@ describe("Meetings API", () => {
 
       expect(response.status).toBe(404);
       expect(response.text).toBe("Error: Not found");
+    });
+  });
+
+  describe("GET /api/meetings/meetings/:userId", () => {
+    test("gets meetings where the user is organizer or participant", async () => {
+      const response = await request(app)
+        .get(`/api/meetings/meetings/${userId}`)
+        .set("Authorization", `Bearer ${authToken}`);
+
+      expect(response.status).toBe(200);
+      expect(Array.isArray(response.body)).toBe(true);
+
+      const returnedIds = response.body.map((meeting: { _id: string }) => meeting._id);
+      expect(returnedIds).toContain(createdMeetingIds[0]);
+      expect(returnedIds).toContain(upcomingMeetingId);
+      expect(returnedIds).toContain(oldMeetingId);
+      expect(returnedIds).toContain(noDurationMeetingId);
+      expect(returnedIds).not.toContain(createdMeetingIds[1]);
+    });
+  });
+
+  describe("GET /api/meetings/meetings/:userId/upcoming", () => {
+    test("gets upcoming meetings for a user", async () => {
+      const response = await request(app)
+        .get(`/api/meetings/meetings/${userId}/upcoming`)
+        .set("Authorization", `Bearer ${authToken}`);
+
+      expect(response.status).toBe(200);
+      expect(Array.isArray(response.body)).toBe(true);
+      expect(response.body.map((meeting: { _id: string }) => meeting._id)).toEqual([
+        upcomingMeetingId,
+      ]);
+    });
+  });
+
+  describe("GET /api/meetings/meetings/:userId/recent", () => {
+    test("gets past meetings for a user ordered from newest to oldest", async () => {
+      const response = await request(app)
+        .get(`/api/meetings/meetings/${userId}/recent`)
+        .set("Authorization", `Bearer ${authToken}`);
+
+      expect(response.status).toBe(200);
+      expect(Array.isArray(response.body)).toBe(true);
+
+      const returnedIds = response.body.map((meeting: { _id: string }) => meeting._id);
+      expect(returnedIds).toContain(createdMeetingIds[0]);
+      expect(returnedIds).toContain(oldMeetingId);
+      expect(returnedIds).toContain(noDurationMeetingId);
+      expect(returnedIds).not.toContain(upcomingMeetingId);
+      expect(new Date(response.body[0].date).getTime()).toBeGreaterThanOrEqual(
+        new Date(response.body[1].date).getTime(),
+      );
+    });
+  });
+
+  describe("GET /api/meetings/meetings/:userId/last-month", () => {
+    test("gets only meetings from the last month for a user", async () => {
+      const response = await request(app)
+        .get(`/api/meetings/meetings/${userId}/last-month`)
+        .set("Authorization", `Bearer ${authToken}`);
+
+      expect(response.status).toBe(200);
+      expect(Array.isArray(response.body)).toBe(true);
+
+      const returnedIds = response.body.map((meeting: { _id: string }) => meeting._id);
+      expect(returnedIds).toContain(createdMeetingIds[0]);
+      expect(returnedIds).toContain(noDurationMeetingId);
+      expect(returnedIds).not.toContain(oldMeetingId);
+      expect(returnedIds).not.toContain(upcomingMeetingId);
+    });
+  });
+
+  describe("GET /api/meetings/meetings/:userId/average-duration", () => {
+    test("gets the average duration for meetings tied to a user", async () => {
+      const response = await request(app)
+        .get(`/api/meetings/meetings/${userId}/average-duration`)
+        .set("Authorization", `Bearer ${authToken}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.averageDuration).toBeCloseTo((45 + 90 + 120) / 3);
     });
   });
 
