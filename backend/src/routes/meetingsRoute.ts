@@ -8,6 +8,11 @@ router.get("/meetings", authenticate, meetingsController.getAll.bind(meetingsCon
 router.get("/meetings/:id", authenticate, meetingsController.getById.bind(meetingsController));
 router.get("/meetings/:userId", authenticate, meetingsController.getByUserId.bind(meetingsController));
 
+router.get("/meetings/:userId/upcoming", authenticate, meetingsController.getUpcomingByUserId.bind(meetingsController));
+router.get("/meetings/:userId/recent", authenticate, meetingsController.getRecentByUserId.bind(meetingsController));
+router.get("/meetings/:userId/last-month", authenticate, meetingsController.getLastMonthByUserId.bind(meetingsController));
+router.get("/meetings/:userId/average-duration", authenticate, meetingsController.getAverageDurationByUserId.bind(meetingsController));
+
 router.post("/meetings", authenticate, meetingsController.create.bind(meetingsController));
 
 router.put("/meetings/:id", authenticate, meetingsController.update.bind(meetingsController));
