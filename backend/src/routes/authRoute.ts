@@ -123,6 +123,57 @@ router.post("/logout", authController.logout);
  */
 router.post("/refresh-token", authController.refreshToken);
 
+/**
+ * @openapi
+ * /api/auth/google:
+ *   post:
+ *     tags:
+ *       - Auth
+ *     summary: Sign in with Google or link Google to the signed-in user
+ *     description: >
+ *       Accepts a Google ID token. If the request also includes a valid bearer token,
+ *       the Google account is linked to the currently signed-in user. Otherwise the
+ *       backend signs in an existing matching user or creates a new one.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/GoogleLoginRequest'
+ *     responses:
+ *       200:
+ *         description: Google authentication succeeded
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/GoogleAuthResponse'
+ *       400:
+ *         description: Missing Google credential
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       401:
+ *         description: Invalid Google credential or access token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       409:
+ *         description: Google account is already linked to another user or conflicts with the signed-in account
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Google OAuth is not configured
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
 router.post("/google", authController.googleLogin);
 
 /**
