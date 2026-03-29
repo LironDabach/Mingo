@@ -1,5 +1,6 @@
 import express from "express";
 import authController from "../controllers/authController";
+import { authenticate } from "../middleware/authMiddleware";
 
 const router = express.Router();
 
@@ -178,6 +179,40 @@ router.post("/google", authController.googleLogin);
 
 /**
  * @openapi
+ * /api/auth/google/disconnect:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Disconnect Google from the signed-in user
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       '200':
+ *         description: Google account disconnected successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MessageResponse'
+ *       '400':
+ *         description: Google account is not linked
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       '401':
+ *         description: Missing or invalid access token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.post(
+  "/google/disconnect",
+  authenticate,
+  authController.disconnectGoogle,
+);
+
+/**
+ * @openapi
  * /api/auth/github:
  *   post:
  *     tags: [Auth]
@@ -209,5 +244,39 @@ router.post("/google", authController.googleLogin);
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post("/github", authController.gitHubLogin);
+
+/**
+ * @openapi
+ * /api/auth/github/disconnect:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Disconnect GitHub from the signed-in user
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       '200':
+ *         description: GitHub account disconnected successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MessageResponse'
+ *       '400':
+ *         description: GitHub account is not linked
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       '401':
+ *         description: Missing or invalid access token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.post(
+  "/github/disconnect",
+  authenticate,
+  authController.disconnectGitHub,
+);
 
 export default router;

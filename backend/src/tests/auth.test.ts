@@ -455,4 +455,69 @@ describe("Auth API", () => {
       expect(savedUser?.email).toBe(googleEmail);
     });
   });
+
+  describe("POST /api/auth/google/disconnect", () => {
+    test("disconnects google from the signed-in user", async () => {
+      const googleSub = `google-disconnect-${Date.now()}`;
+      await usersModel.findByIdAndUpdate(existingUserId, { googleId: googleSub });
+
+      const response = await request(app)
+        .post("/api/auth/google/disconnect")
+        .set("Authorization", `Bearer ${existingUserAuthToken}`)
+        .send({});
+
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe(
+        "Google account disconnected successfully",
+      );
+
+      const savedUser = await usersModel.findById(existingUserId).lean();
+      expect(savedUser).not.toBeNull();
+      expect(savedUser).not.toHaveProperty("googleId");
+    });
+
+    test("returns 400 when google is not linked", async () => {
+      await usersModel.findByIdAndUpdate(existingUserId, { $unset: { googleId: 1 } });
+
+      const response = await request(app)
+        .post("/api/auth/google/disconnect")
+        .set("Authorization", `Bearer ${existingUserAuthToken}`)
+        .send({});
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe("Google account is not linked");
+    });
+  });
+
+  describe("POST /api/auth/github/disconnect", () => {
+    test("returns 401 when authorization header is missing", async () => {
+      const response = await request(app)
+        .post("/api/auth/github/disconnect")
+        .send({});
+
+      expect(response.status).toBe(401);
+      expect(response.body.message).toBe(
+        "Unauthorized: missing or invalid Authorization header",
+      );
+    });
+
+    test("disconnects github from the signed-in user", async () => {
+      const githubId = `github-disconnect-${Date.now()}`;
+      await usersModel.findByIdAndUpdate(existingUserId, { githubId });
+
+      const response = await request(app)
+        .post("/api/auth/github/disconnect")
+        .set("Authorization", `Bearer ${existingUserAuthToken}`)
+        .send({});
+
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe(
+        "GitHub account disconnected successfully",
+      );
+
+      const savedUser = await usersModel.findById(existingUserId).lean();
+      expect(savedUser).not.toBeNull();
+      expect(savedUser).not.toHaveProperty("githubId");
+    });
+  });
 });

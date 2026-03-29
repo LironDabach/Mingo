@@ -48,6 +48,13 @@ export const buildSwaggerSpec = () => {
               error: { type: "string", example: "Meeting ID is required" },
             },
           },
+          MessageResponse: {
+            type: "object",
+            properties: {
+              message: { type: "string", example: "Operation completed successfully" },
+            },
+            required: ["message"],
+          },
           User: {
             type: "object",
             properties: {
