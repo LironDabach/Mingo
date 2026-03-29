@@ -9,12 +9,18 @@ const userSchema = new mongoose.Schema({
 
   password: {
     type: String,
-    required: false, // Not required for GitHub OAuth users
+    required: false,
   },
 
   refreshTokens: {
     type: [String],
     default: [],
+  },
+
+  fullname: {
+    type: String,
+    required: true,
+    unique: true,
   },
 
   profilePicture: {
@@ -32,7 +38,13 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: false,
     unique: true,
-    sparse: true, // Allows multiple null values
+    sparse: true,
+  },
+  googleId: {
+    type: String,
+    required: false,
+    unique: true,
+    sparse: true,
   },
 });
 
