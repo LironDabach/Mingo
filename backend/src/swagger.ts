@@ -118,6 +118,20 @@ export const buildSwaggerSpec = () => {
             },
             required: ["code"],
           },
+          GoogleLoginRequest: {
+            type: "object",
+            properties: {
+              credential: {
+                type: "string",
+                description: "Google ID token received from Google Sign-In",
+                example: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+              },
+            },
+            required: ["credential"],
+          },
+          GoogleAuthResponse: {
+            allOf: [{ $ref: "#/components/schemas/AuthResponse" }],
+          },
           UserWriteRequest: {
             type: "object",
             properties: {
