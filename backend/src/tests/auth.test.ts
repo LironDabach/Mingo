@@ -1,5 +1,3 @@
-/// <reference types="jest" />
-
 import path from "path";
 import dotenv from "dotenv";
 import request from "supertest";
@@ -201,6 +199,16 @@ describe("Auth API", () => {
       expect(savedUser?.refreshTokens).toContain(response.body.refreshToken);
     });
 
+    test("returns 401 when the username does not exist", async () => {
+      const response = await request(app).post("/api/auth/login").send({
+        username: `missing_user_${Date.now()}`,
+        password: "Pass1234!",
+      });
+
+      expect(response.status).toBe(401);
+      expect(response.body.message).toBe("Invalid username or password");
+    });
+
     test("returns 401 for invalid credentials", async () => {
       const existingUser = await usersModel.findById(existingUserId);
 
@@ -261,6 +269,15 @@ describe("Auth API", () => {
       expect(response.status).toBe(401);
       expect(response.body.message).toBe("Invalid refresh token");
     });
+
+    test("returns 500 for a malformed refresh token payload", async () => {
+      const response = await request(app).post("/api/auth/logout").send({
+        refreshToken: "definitely-not-a-jwt",
+      });
+
+      expect(response.status).toBe(500);
+      expect(response.body.message).toBe("Internal server error");
+    });
   });
 
   describe("POST /api/auth/refresh-token", () => {
@@ -305,6 +322,22 @@ describe("Auth API", () => {
       expect(savedUser?.refreshTokens).toContain(response.body.refreshToken);
     });
 
+    test("returns 401 when the refresh token belongs to a missing user", async () => {
+      const deletedUserId = new mongoose.Types.ObjectId().toString();
+      const deletedUserRefreshToken = jwt.sign(
+        { _id: deletedUserId, rand: 654 },
+        jwtSecret,
+        { expiresIn: "1h" },
+      );
+
+      const response = await request(app).post("/api/auth/refresh-token").send({
+        refreshToken: deletedUserRefreshToken,
+      });
+
+      expect(response.status).toBe(401);
+      expect(response.body.message).toBe("Invalid refresh token");
+    });
+
     test("returns 401 and clears stored tokens for a stolen refresh token", async () => {
       const user = await usersModel.findById(existingUserId);
       const stolenToken = jwt.sign(
@@ -334,6 +367,27 @@ describe("Auth API", () => {
 
       expect(response.status).toBe(400);
       expect(response.body.message).toBe("GitHub authorization code is required");
+    });
+
+    test("returns 500 when github oauth is not configured", async () => {
+      const originalClientId = process.env.GITHUB_CLIENT_ID;
+      const originalClientSecret = process.env.GITHUB_CLIENT_SECRET;
+      const originalCallbackUrl = process.env.GITHUB_CALLBACK_URL;
+
+      delete process.env.GITHUB_CLIENT_ID;
+      delete process.env.GITHUB_CLIENT_SECRET;
+      delete process.env.GITHUB_CALLBACK_URL;
+
+      const response = await request(app).post("/api/auth/github").send({
+        code: "dummy-code",
+      });
+
+      expect(response.status).toBe(500);
+      expect(response.body.message).toBe("GitHub OAuth is not configured");
+
+      process.env.GITHUB_CLIENT_ID = originalClientId;
+      process.env.GITHUB_CLIENT_SECRET = originalClientSecret;
+      process.env.GITHUB_CALLBACK_URL = originalCallbackUrl;
     });
   });
 

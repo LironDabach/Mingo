@@ -112,13 +112,13 @@ class UsersController {
       const created = await User.create(payload);
       return res.status(201).json(toSafeUserObject(created));
     } catch (err: any) {
-      console.error(err);
       if (err?.code === 11000) {
         const duplicateField = Object.keys(err.keyPattern || {})[0];
         return res
           .status(400)
           .send(getDuplicateFieldErrorMessage(duplicateField));
       }
+      console.error(err);
       return res.status(500).send("Error: Can't create user");
     }
   }
@@ -194,13 +194,13 @@ class UsersController {
 
       return res.json(toSafeUserObject(updated));
     } catch (err: any) {
-      console.error(err);
       if (err?.code === 11000) {
         const duplicateField = Object.keys(err.keyPattern || {})[0];
         return res
           .status(400)
           .send(getDuplicateFieldErrorMessage(duplicateField));
       }
+      console.error(err);
       return res.status(500).send("Error: Can't update user");
     }
   }

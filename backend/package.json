@@ -12,7 +12,9 @@
     "testMingoAgent": "tsc && jest --runInBand --detectOpenHandles --forceExit ./src/tests/mingoAgent.test.ts",
     "testUsers": "tsc && jest --runInBand --detectOpenHandles --forceExit ./src/tests/users.test.ts",
     "testAuth": "tsc && jest --runInBand --detectOpenHandles --forceExit ./src/tests/auth.test.ts",
+    "testTasks": "tsc && jest --runInBand --detectOpenHandles --forceExit ./src/tests/tasks.test.ts",
     "jestCoverage": "jest --coverage --runInBand --detectOpenHandles --forceExit",
+    "testSwagger": "tsc && jest --runInBand --detectOpenHandles --forceExit ./src/tests/swagger.test.ts",
     "prod": "cp ../.env.production .env && tsc -p tsconfig_prod.json && pm2 restart ecosystem.config.js --env production"
   },
   "dependencies": {

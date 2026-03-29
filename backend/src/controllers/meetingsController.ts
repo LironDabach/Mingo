@@ -1,4 +1,5 @@
 import { Response } from "express";
+import mongoose from "mongoose";
 import meetingsModel from "../models/meetingsModel";
 import { AuthRequest } from "../middleware/authMiddleware";
 import baseController from "./baseController";
@@ -9,12 +10,44 @@ class meetingsController extends baseController {
   }
 
   private buildUserMeetingsFilter(userId: string) {
+    const normalizedUserId = mongoose.Types.ObjectId.isValid(userId)
+      ? new mongoose.Types.ObjectId(userId)
+      : userId;
+
     return {
       $or: [
-        { organizerId: userId },
-        { participants: userId },
+        { organizerId: normalizedUserId },
+        { participants: normalizedUserId },
       ],
     };
+  }
+
+  async getById(req: AuthRequest, res: Response) {
+    const requestedId = req.params.id;
+
+    if (!requestedId) {
+      return res.status(400).json({ error: "Meeting ID is required" });
+    }
+
+    try {
+      const meeting = await this.model.findById(requestedId);
+      if (meeting) {
+        return res.json(meeting);
+      }
+
+      const userMeetings = await this.model
+        .find(this.buildUserMeetingsFilter(requestedId))
+        .sort({ date: -1 });
+
+      if (userMeetings.length > 0) {
+        return res.json(userMeetings);
+      }
+
+      return res.status(404).send("Error: Not found");
+    } catch (err) {
+      console.error(err);
+      return res.status(500).send("Error: Can't retrieve Entity by ID");
+    }
   }
 
   async getByUserId(req: AuthRequest, res: Response) {

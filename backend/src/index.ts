@@ -5,6 +5,7 @@ import mingoAgentRoute from "./routes/mingoAgentRoute";
 import transcriptRoute from "./routes/transcriptRoute";
 import authRoute from "./routes/authRoute";
 import usersRoute from "./routes/usersRoute";
+import tasksRoute from "./routes/tasksRoute";
 
 import { setupSwagger } from "./swagger";
 import path from "path";
@@ -20,21 +21,13 @@ app.use((req, res, next) => {
   next();
 });
 
-// // API routes
 app.use("/api/meetings", meetingsRoute);
 app.use("/api", mingoAgentRoute);
 app.use("/api", transcriptRoute);
-
-// app.use("/api/comment", commentsRoute);
-// app.use("/api/like", likesRoute);
+app.use("/api", tasksRoute);
 app.use("/api/auth", authRoute);
 app.use("/api/user", usersRoute);
-
 app.use("/api/upload", express.static("public/uploads"));
-// app.use("/api/upload", multerRoute);
-
-// Serve React static files
-//const distPath = path.resolve(__dirname, "../../client/dist");
 
 const distPath = path.resolve(__dirname, "../../../client/dist");
 

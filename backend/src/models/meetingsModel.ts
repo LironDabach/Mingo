@@ -32,13 +32,13 @@ const meetingSchema = new mongoose.Schema({
   },
   topics: [
     {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "topic",
+      type: String,
     },
   ],
   tasks: [
     {
-      type: String,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "task",
     },
   ],
   mingoAgentId: {
