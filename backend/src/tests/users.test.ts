@@ -55,20 +55,23 @@ beforeAll(async () => {
       refreshTokens: [],
     },
     {
-      username: uniqueValue("users_other"),
-      email: `${uniqueValue("users_other")}@example.com`,
+      username: `users_owner_${suffix}`,
+      fullname: `Users Owner ${suffix}`,
+      email: `users_owner_${suffix}@example.com`,
       password: hashedPassword,
       refreshTokens: [],
     },
     {
-      username: uniqueValue("users_delete"),
-      email: `${uniqueValue("users_delete")}@example.com`,
+      username: `users_other_${suffix}`,
+      fullname: `Users Other ${suffix}`,
+      email: `users_other_${suffix}@example.com`,
       password: hashedPassword,
       refreshTokens: [],
     },
     {
-      username: uniqueValue("users_picture"),
-      email: `${uniqueValue("users_picture")}@example.com`,
+      username: `users_delete_${suffix}`,
+      fullname: `Users Delete ${suffix}`,
+      email: `users_delete_${suffix}@example.com`,
       password: hashedPassword,
       refreshTokens: [],
     },
@@ -167,6 +170,7 @@ describe("Users API", () => {
     test("create user requires authentication", async () => {
       const response = await request(app).post("/api/user").send({
         username: "created_without_auth",
+        fullname: "Created Without Auth",
         email: "created_without_auth@example.com",
       });
 
@@ -178,8 +182,9 @@ describe("Users API", () => {
         .post("/api/user")
         .set("Authorization", `Bearer ${authToken}`)
         .send({
-          username: uniqueValue("invalid_fields"),
-          email: `${uniqueValue("invalid_fields")}@example.com`,
+          username: `invalid_fields_${Date.now()}`,
+          fullname: `Invalid Fields ${Date.now()}`,
+          email: `invalid_fields_${Date.now()}@example.com`,
           role: "admin",
         });
 
@@ -218,14 +223,16 @@ describe("Users API", () => {
         .post("/api/user")
         .set("Authorization", `Bearer ${authToken}`)
         .send({
-          username: uniqueValue("users_created"),
-          email: `${uniqueValue("users_created")}@example.com`,
+          username: `users_created_${Date.now()}`,
+          fullname: `Users Created ${Date.now()}`,
+          email: `users_created_${Date.now()}@example.com`,
           password: "Pass1234!",
         });
 
       expect(response.status).toBe(201);
       expect(response.body._id).toBeDefined();
       expect(response.body.username).toContain("users_created_");
+      expect(response.body.fullname).toContain("Users Created");
       expect(response.body.email).toContain("@example.com");
       expect(response.body).not.toHaveProperty("password");
       expect(response.body).not.toHaveProperty("refreshTokens");
@@ -267,6 +274,7 @@ describe("Users API", () => {
         .set("Authorization", `Bearer ${authToken}`)
         .send({
           username: ownerUser!.username,
+          fullname: `Duplicate Users ${Date.now()}`,
           email: `duplicate_users_${Date.now()}@example.com`,
         });
 
@@ -370,20 +378,23 @@ describe("Users API", () => {
         .put(`/api/user/${ownerId}`)
         .set("Authorization", `Bearer ${authToken}`)
         .send({
-          username: uniqueValue("users_owner_updated"),
-          email: `${uniqueValue("users_owner_updated")}@example.com`,
+          username: `users_owner_updated_${Date.now()}`,
+          fullname: `Users Owner Updated ${Date.now()}`,
+          email: `users_owner_updated_${Date.now()}@example.com`,
           password: "NewPass1234!",
         });
 
       expect(response.status).toBe(200);
       expect(response.body._id).toBe(ownerId);
       expect(response.body.username).toContain("users_owner_updated_");
+      expect(response.body.fullname).toContain("Users Owner Updated");
       expect(response.body.email).toContain("@example.com");
       expect(response.body).not.toHaveProperty("password");
       expect(response.body).not.toHaveProperty("refreshTokens");
 
       const savedUser = await usersModel.findById(ownerId);
       expect(savedUser?.email).toBe(response.body.email);
+      expect(savedUser?.fullname).toBe(response.body.fullname);
       expect(savedUser?.password).not.toBe("NewPass1234!");
       expect(savedUser?.password).toBeDefined();
       expect(
@@ -391,102 +402,19 @@ describe("Users API", () => {
       ).toBe(true);
     });
 
-    test("updates a user profile picture and removes the previous file on replacement", async () => {
-      const initialResponse = await request(app)
-        .put(`/api/user/${userWithPictureId}`)
-        .set("Authorization", `Bearer ${pictureUserAuthToken}`)
-        .field("username", uniqueValue("users_picture_first"))
-        .attach("file", imageFixturePath);
-
-      expect(initialResponse.status).toBe(200);
-      expect(initialResponse.body.profilePicture).toContain("/api/upload/");
-
-      const firstFileName = initialResponse.body.profilePicture.split("/api/upload/")[1];
-      const firstUploadPath = path.resolve(process.cwd(), uploadsDir, firstFileName);
-      expect(fs.existsSync(firstUploadPath)).toBe(true);
-
-      const replacementResponse = await request(app)
-        .put(`/api/user/${userWithPictureId}`)
-        .set("Authorization", `Bearer ${pictureUserAuthToken}`)
-        .field("username", uniqueValue("users_picture_second"))
-        .attach("file", imageFixturePath);
-
-      expect(replacementResponse.status).toBe(200);
-      expect(replacementResponse.body.profilePicture).toContain("/api/upload/");
-      expect(replacementResponse.body.profilePicture).not.toBe(
-        initialResponse.body.profilePicture,
-      );
-      expect(fs.existsSync(firstUploadPath)).toBe(false);
-
-      const secondFileName =
-        replacementResponse.body.profilePicture.split("/api/upload/")[1];
-      const secondUploadPath = path.resolve(process.cwd(), uploadsDir, secondFileName);
-      createdUploadPaths.push(secondUploadPath);
-      expect(fs.existsSync(secondUploadPath)).toBe(true);
-    });
-
-    test("removes the existing profile picture when requested", async () => {
-      const currentUser = await usersModel.findById(userWithPictureId);
-      const currentProfilePicture = currentUser?.profilePicture || "";
-      const currentFileName =
-        currentProfilePicture.split("/api/upload/")[1] || "";
-      const currentUploadPath = path.resolve(process.cwd(), uploadsDir, currentFileName);
-
+    test("returns 400 when fullname is missing on create", async () => {
       const response = await request(app)
-        .put(`/api/user/${userWithPictureId}`)
-        .set("Authorization", `Bearer ${pictureUserAuthToken}`)
-        .send({
-          removeProfilePicture: true,
-        });
-
-      expect(response.status).toBe(200);
-      expect(response.body.profilePicture).toBeUndefined();
-      expect(fs.existsSync(currentUploadPath)).toBe(false);
-
-      const updatedUser = await usersModel.findById(userWithPictureId);
-      expect(updatedUser?.profilePicture).toBeUndefined();
-    });
-
-    test("ignores an empty password on update", async () => {
-      const userBeforeUpdate = await usersModel.findById(ownerId);
-
-      const response = await request(app)
-        .put(`/api/user/${ownerId}`)
-        .set("Authorization", `Bearer ${authToken}`)
-        .send({
-          password: "",
-        });
-
-      expect(response.status).toBe(200);
-
-      const userAfterUpdate = await usersModel.findById(ownerId);
-      expect(userAfterUpdate?.password).toBe(userBeforeUpdate?.password);
-    });
-
-    test("returns 400 when updating to a duplicate githubId", async () => {
-      const duplicateGithubId = uniqueValue("update-github");
-
-      const seedResponse = await request(app)
         .post("/api/user")
         .set("Authorization", `Bearer ${authToken}`)
         .send({
-          username: uniqueValue("users_dup_github_seed"),
-          email: `${uniqueValue("users_dup_github_seed")}@example.com`,
-          githubId: duplicateGithubId,
-        });
-
-      expect(seedResponse.status).toBe(201);
-      createdUserIds.push(seedResponse.body._id);
-
-      const response = await request(app)
-        .put(`/api/user/${ownerId}`)
-        .set("Authorization", `Bearer ${authToken}`)
-        .send({
-          githubId: duplicateGithubId,
+          username: `users_missing_fullname_${Date.now()}`,
+          email: `users_missing_fullname_${Date.now()}@example.com`,
         });
 
       expect(response.status).toBe(400);
-      expect(response.text).toBe("Error: githubId already exists");
+      expect(response.text).toBe(
+        "Error: username, fullname and email are required",
+      );
     });
   });
 

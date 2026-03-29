@@ -22,11 +22,13 @@ const toSafeUserObject = (user: any) => {
 
 const allowedFields = [
   "username",
+  "fullname",
   "email",
   "password",
   "profilePicture",
   "removeProfilePicture",
   "githubId",
+  "googleId",
 ];
 
 const hasOnlyAllowedFields = (body: any) =>
@@ -45,6 +47,19 @@ const sanitizeUserPayload = (body: any) => {
 
 const isValidEmail = (email: string) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+const getDuplicateFieldErrorMessage = (field?: string) => {
+  switch (field) {
+    case "githubId":
+      return "Error: githubId already exists";
+    case "googleId":
+      return "Error: googleId already exists";
+    case "fullname":
+      return "Error: fullname already exists";
+    default:
+      return "Error: username or email already exists";
+  }
+};
 
 class UsersController {
   async getAll(_req: Request, res: Response) {
@@ -80,8 +95,10 @@ class UsersController {
         payload.profilePicture = buildUploadedFileUrl(req, req.file.filename);
       }
 
-      if (!payload.username || !payload.email) {
-        return res.status(400).send("Error: username and email are required");
+      if (!payload.username || !payload.fullname || !payload.email) {
+        return res
+          .status(400)
+          .send("Error: username, fullname and email are required");
       }
       if (!isValidEmail(payload.email)) {
         return res.status(400).send("Error: invalid email");
@@ -97,10 +114,9 @@ class UsersController {
     } catch (err: any) {
       if (err?.code === 11000) {
         const duplicateField = Object.keys(err.keyPattern || {})[0];
-        if (duplicateField === "githubId") {
-          return res.status(400).send("Error: githubId already exists");
-        }
-        return res.status(400).send("Error: username or email already exists");
+        return res
+          .status(400)
+          .send(getDuplicateFieldErrorMessage(duplicateField));
       }
       console.error(err);
       return res.status(500).send("Error: Can't create user");
@@ -180,10 +196,9 @@ class UsersController {
     } catch (err: any) {
       if (err?.code === 11000) {
         const duplicateField = Object.keys(err.keyPattern || {})[0];
-        if (duplicateField === "githubId") {
-          return res.status(400).send("Error: githubId already exists");
-        }
-        return res.status(400).send("Error: username or email already exists");
+        return res
+          .status(400)
+          .send(getDuplicateFieldErrorMessage(duplicateField));
       }
       console.error(err);
       return res.status(500).send("Error: Can't update user");

@@ -123,6 +123,8 @@ router.post("/logout", authController.logout);
  */
 router.post("/refresh-token", authController.refreshToken);
 
+router.post("/google", authController.googleLogin);
+
 /**
  * @openapi
  * /api/auth/github:
