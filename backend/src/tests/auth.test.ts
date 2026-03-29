@@ -10,6 +10,14 @@ import { Express } from "express";
 import initApp from "../index";
 import usersModel from "../models/usersModel";
 
+var mockVerifyIdToken = jest.fn();
+
+jest.mock("google-auth-library", () => ({
+  OAuth2Client: jest.fn().mockImplementation(() => ({
+    verifyIdToken: (...args: any[]) => mockVerifyIdToken(...args),
+  })),
+}));
+
 jest.setTimeout(30000);
 
 let app: Express;
@@ -17,6 +25,7 @@ let jwtSecret: string;
 let existingUserId: string;
 let existingRefreshToken = "";
 let githubUserId: string;
+let existingUserAuthToken: string;
 const createdUserIds: string[] = [];
 
 beforeAll(async () => {
@@ -29,6 +38,9 @@ beforeAll(async () => {
   if (!jwtSecret) {
     throw new Error("Missing required parameter in .env.development: JWT_SECRET");
   }
+
+  process.env.GOOGLE_CLIENT_ID =
+    process.env.GOOGLE_CLIENT_ID?.trim() || "test-google-client";
 
   app = await initApp();
 
@@ -45,12 +57,14 @@ beforeAll(async () => {
     {
       _id: seededExistingUserId,
       username: `auth_existing_${suffix}`,
+      fullname: `Auth Existing ${suffix}`,
       email: `auth_existing_${suffix}@example.com`,
       password: hashedPassword,
       refreshTokens: [seededRefreshToken],
     },
     {
       username: `auth_github_${suffix}`,
+      fullname: `Auth Github ${suffix}`,
       email: `auth_github_${suffix}@example.com`,
       githubId: `github-${suffix}`,
       refreshTokens: [],
@@ -60,8 +74,15 @@ beforeAll(async () => {
   existingUserId = existingUser!._id.toString();
   existingRefreshToken = seededRefreshToken;
   githubUserId = githubUser!._id.toString();
+  existingUserAuthToken = jwt.sign({ _id: existingUserId }, jwtSecret, {
+    expiresIn: "1h",
+  });
   createdUserIds.push(existingUserId, githubUserId);
 }, 30000);
+
+beforeEach(() => {
+  mockVerifyIdToken.mockReset();
+});
 
 afterAll(async () => {
   if (createdUserIds.length > 0) {
@@ -100,6 +121,7 @@ describe("Auth API", () => {
     test("registers a new user", async () => {
       const response = await request(app).post("/api/auth/register").send({
         username: `registered_${Date.now()}`,
+        fullname: `Registered User ${Date.now()}`,
         email: `registered_${Date.now()}@example.com`,
         password: "Pass1234!",
       });
@@ -109,6 +131,7 @@ describe("Auth API", () => {
       expect(response.body.refreshToken).toBeDefined();
       expect(response.body.user._id).toBeDefined();
       expect(response.body.user.username).toContain("registered_");
+      expect(response.body.user.fullname).toContain("Registered User");
       expect(response.body.user.email).toContain("@example.com");
       expect(response.body.user).not.toHaveProperty("password");
 
@@ -117,6 +140,7 @@ describe("Auth API", () => {
       const savedUser = await usersModel.findById(response.body.user._id);
       expect(savedUser).not.toBeNull();
       expect(savedUser?.email).toBe(response.body.user.email);
+      expect(savedUser?.fullname).toBe(response.body.user.fullname);
       expect(savedUser?.password).not.toBe("Pass1234!");
       expect(savedUser?.refreshTokens).toContain(response.body.refreshToken);
     });
@@ -171,6 +195,7 @@ describe("Auth API", () => {
       expect(response.body.refreshToken).toBeDefined();
       expect(response.body.user._id).toBe(existingUserId);
       expect(response.body.user.username).toBe(existingUser!.username);
+      expect(response.body.user.fullname).toBe(existingUser!.fullname);
 
       const savedUser = await usersModel.findById(existingUserId);
       expect(savedUser?.refreshTokens).toContain(response.body.refreshToken);
@@ -309,6 +334,71 @@ describe("Auth API", () => {
 
       expect(response.status).toBe(400);
       expect(response.body.message).toBe("GitHub authorization code is required");
+    });
+  });
+
+  describe("POST /api/auth/google", () => {
+    test("returns 400 when google credential is missing", async () => {
+      const response = await request(app).post("/api/auth/google").send({});
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe("Google credential is required");
+    });
+
+    test("links a google account to an existing user by email", async () => {
+      const existingUser = await usersModel.findById(existingUserId);
+      const googleSub = `google-sub-${Date.now()}`;
+
+      mockVerifyIdToken.mockResolvedValue({
+        getPayload: () => ({
+          sub: googleSub,
+          email: existingUser!.email,
+          name: existingUser!.fullname,
+          picture: "https://example.com/google-avatar.png",
+        }),
+      });
+
+      const response = await request(app).post("/api/auth/google").send({
+        credential: "valid-google-credential",
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.body.token).toBeDefined();
+      expect(response.body.refreshToken).toBeDefined();
+      expect(response.body.user._id).toBe(existingUserId);
+      expect(response.body.user.email).toBe(existingUser!.email);
+
+      const savedUser = await usersModel.findById(existingUserId);
+      expect(savedUser?.googleId).toBe(googleSub);
+      expect(savedUser?.refreshTokens).toContain(response.body.refreshToken);
+    });
+
+    test("links google to the signed-in user", async () => {
+      const googleSub = `google-link-${Date.now()}`;
+      const googleEmail = `different_google_${Date.now()}@example.com`;
+
+      mockVerifyIdToken.mockResolvedValue({
+        getPayload: () => ({
+          sub: googleSub,
+          email: googleEmail,
+          name: "Auth Existing Linked Google",
+          picture: "https://example.com/google-linked-avatar.png",
+        }),
+      });
+
+      const response = await request(app)
+        .post("/api/auth/google")
+        .set("Authorization", `Bearer ${existingUserAuthToken}`)
+        .send({
+          credential: "valid-google-link-credential",
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.user._id).toBe(existingUserId);
+
+      const savedUser = await usersModel.findById(existingUserId);
+      expect(savedUser?.googleId).toBe(googleSub);
+      expect(savedUser?.email).toBe(googleEmail);
     });
   });
 });

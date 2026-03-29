@@ -41,18 +41,21 @@ beforeAll(async () => {
   const [ownerUser, otherUser, deleteUser] = await usersModel.create([
     {
       username: `users_owner_${suffix}`,
+      fullname: `Users Owner ${suffix}`,
       email: `users_owner_${suffix}@example.com`,
       password: hashedPassword,
       refreshTokens: [],
     },
     {
       username: `users_other_${suffix}`,
+      fullname: `Users Other ${suffix}`,
       email: `users_other_${suffix}@example.com`,
       password: hashedPassword,
       refreshTokens: [],
     },
     {
       username: `users_delete_${suffix}`,
+      fullname: `Users Delete ${suffix}`,
       email: `users_delete_${suffix}@example.com`,
       password: hashedPassword,
       refreshTokens: [],
@@ -142,6 +145,7 @@ describe("Users API", () => {
     test("create user requires authentication", async () => {
       const response = await request(app).post("/api/user").send({
         username: "created_without_auth",
+        fullname: "Created Without Auth",
         email: "created_without_auth@example.com",
       });
 
@@ -154,6 +158,7 @@ describe("Users API", () => {
         .set("Authorization", `Bearer ${authToken}`)
         .send({
           username: `invalid_fields_${Date.now()}`,
+          fullname: `Invalid Fields ${Date.now()}`,
           email: `invalid_fields_${Date.now()}@example.com`,
           role: "admin",
         });
@@ -168,6 +173,7 @@ describe("Users API", () => {
         .set("Authorization", `Bearer ${authToken}`)
         .send({
           username: `users_created_${Date.now()}`,
+          fullname: `Users Created ${Date.now()}`,
           email: `users_created_${Date.now()}@example.com`,
           password: "Pass1234!",
         });
@@ -175,6 +181,7 @@ describe("Users API", () => {
       expect(response.status).toBe(201);
       expect(response.body._id).toBeDefined();
       expect(response.body.username).toContain("users_created_");
+      expect(response.body.fullname).toContain("Users Created");
       expect(response.body.email).toContain("@example.com");
       expect(response.body).not.toHaveProperty("password");
       expect(response.body).not.toHaveProperty("refreshTokens");
@@ -194,6 +201,7 @@ describe("Users API", () => {
         .set("Authorization", `Bearer ${authToken}`)
         .send({
           username: ownerUser!.username,
+          fullname: `Duplicate Users ${Date.now()}`,
           email: `duplicate_users_${Date.now()}@example.com`,
         });
 
@@ -241,6 +249,7 @@ describe("Users API", () => {
         .set("Authorization", `Bearer ${authToken}`)
         .send({
           username: `users_owner_updated_${Date.now()}`,
+          fullname: `Users Owner Updated ${Date.now()}`,
           email: `users_owner_updated_${Date.now()}@example.com`,
           password: "NewPass1234!",
         });
@@ -248,17 +257,34 @@ describe("Users API", () => {
       expect(response.status).toBe(200);
       expect(response.body._id).toBe(ownerId);
       expect(response.body.username).toContain("users_owner_updated_");
+      expect(response.body.fullname).toContain("Users Owner Updated");
       expect(response.body.email).toContain("@example.com");
       expect(response.body).not.toHaveProperty("password");
       expect(response.body).not.toHaveProperty("refreshTokens");
 
       const savedUser = await usersModel.findById(ownerId);
       expect(savedUser?.email).toBe(response.body.email);
+      expect(savedUser?.fullname).toBe(response.body.fullname);
       expect(savedUser?.password).not.toBe("NewPass1234!");
       expect(savedUser?.password).toBeDefined();
       expect(
         await bcrypt.compare("NewPass1234!", savedUser?.password || ""),
       ).toBe(true);
+    });
+
+    test("returns 400 when fullname is missing on create", async () => {
+      const response = await request(app)
+        .post("/api/user")
+        .set("Authorization", `Bearer ${authToken}`)
+        .send({
+          username: `users_missing_fullname_${Date.now()}`,
+          email: `users_missing_fullname_${Date.now()}@example.com`,
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.text).toBe(
+        "Error: username, fullname and email are required",
+      );
     });
   });
 

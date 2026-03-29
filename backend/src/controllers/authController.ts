@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import User from "../models/usersModel";
 import jwt from "jsonwebtoken";
 import fetch from "node-fetch";
+import { OAuth2Client } from "google-auth-library";
 
 const sendError = (code: number, message: string, res: Response) => {
   res.status(code).json({ message });
@@ -11,6 +12,178 @@ const sendError = (code: number, message: string, res: Response) => {
 type GeneratedTokens = {
   token: string;
   refreshToken: string;
+};
+
+type AuthProviderProfile = {
+  provider: "google" | "github";
+  providerId: string;
+  email: string;
+  usernameHint: string;
+  fullname?: string;
+  profilePicture?: string | null;
+};
+
+const getRegisterDuplicateMessage = (field?: string) => {
+  switch (field) {
+    case "email":
+      return "Email already exists";
+    case "fullname":
+      return "Fullname already exists";
+    default:
+      return "Username already exists";
+  }
+};
+
+const buildAuthResponse = (user: any, tokens: GeneratedTokens) => ({
+  ...tokens,
+  user: {
+    _id: user._id,
+    username: user.username,
+    fullname: user.fullname,
+    email: user.email,
+    profilePicture: user.profilePicture,
+  },
+});
+
+const getAuthenticatedUserId = (req: Request) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = authHeader.split(" ")[1];
+  if (!token) {
+    return null;
+  }
+
+  try {
+    const secret = process.env.JWT_SECRET || "default_secret";
+    const decoded = jwt.verify(token, secret) as { _id: string };
+    return decoded._id;
+  } catch (_err) {
+    return null;
+  }
+};
+
+const normalizeUsername = (value: string) =>
+  value.replace(/[^a-zA-Z0-9._-]/g, "");
+
+const buildUniqueUsername = async (seed: string) => {
+  const baseUsername = normalizeUsername(seed) || "user";
+  let username = baseUsername;
+  let counter = 1;
+
+  while (await User.exists({ username })) {
+    username = `${baseUsername}${counter}`;
+    counter += 1;
+  }
+
+  return username;
+};
+
+const applyProfileData = (user: any, profile: AuthProviderProfile, shouldOverwriteEmail = true) => {
+  if (profile.provider === "github") {
+    user.githubId = profile.providerId;
+  } else {
+    user.googleId = profile.providerId;
+  }
+
+  if (shouldOverwriteEmail) {
+    user.email = profile.email;
+  }
+  if (!user.fullname && profile.fullname) {
+    user.fullname = profile.fullname;
+  }
+  if (profile.profilePicture) {
+    user.profilePicture = profile.profilePicture;
+  }
+};
+
+const findOrCreateOAuthUser = async (profile: AuthProviderProfile, req: Request) => {
+  const authenticatedUserId = getAuthenticatedUserId(req);
+  const providerLookup =
+    profile.provider === "github"
+      ? { githubId: profile.providerId }
+      : { googleId: profile.providerId };
+
+  let providerOwner = await User.findOne(providerLookup);
+
+  if (authenticatedUserId) {
+    const authenticatedUser = await User.findById(authenticatedUserId);
+
+    if (!authenticatedUser) {
+      return { error: { code: 401, message: "Invalid access token" } };
+    }
+
+    if (providerOwner && providerOwner._id.toString() !== authenticatedUserId) {
+      return {
+        error: {
+          code: 409,
+          message: `${profile.provider} account is already linked to another user`,
+        },
+      };
+    }
+
+    if (
+      profile.provider === "github" &&
+      authenticatedUser.googleId &&
+      authenticatedUser.email !== profile.email
+    ) {
+      return {
+        error: {
+          code: 409,
+          message: "GitHub account email does not match the signed-in user",
+        },
+      };
+    }
+
+    if (
+      profile.provider === "google" &&
+      authenticatedUser.githubId &&
+      authenticatedUser.email !== profile.email
+    ) {
+      return {
+        error: {
+          code: 409,
+          message: "Google account email does not match the signed-in user",
+        },
+      };
+    }
+
+    applyProfileData(authenticatedUser, profile);
+    await authenticatedUser.save();
+    return { user: authenticatedUser };
+  }
+
+  if (providerOwner) {
+    applyProfileData(providerOwner, profile);
+    await providerOwner.save();
+    return { user: providerOwner };
+  }
+
+  let user = await User.findOne({ email: profile.email });
+  if (user) {
+    applyProfileData(user, profile);
+    await user.save();
+    return { user };
+  }
+
+  const username = await buildUniqueUsername(profile.usernameHint);
+  const createPayload: Record<string, any> = {
+    username,
+    fullname: profile.fullname || username,
+    email: profile.email,
+    ...(profile.provider === "github"
+      ? { githubId: profile.providerId }
+      : { googleId: profile.providerId }),
+  };
+  if (profile.profilePicture) {
+    createPayload.profilePicture = profile.profilePicture;
+  }
+
+  user = await User.create(createPayload);
+
+  return { user };
 };
 
 const generateToken = (userId: string): GeneratedTokens => {
@@ -37,6 +210,7 @@ const register = async (req: Request, res: Response) => {
   const username = req.body.username;
   const email = req.body.email;
   const password = req.body.password;
+  const fullname = req.body.fullname || username;
 
   if (!username || !email || !password) {
     return sendError(400, "Username, email and password are required", res);
@@ -56,28 +230,18 @@ const register = async (req: Request, res: Response) => {
     const hashedPassword = await bcrypt.hash(password, salt);
     const user = await User.create({
       username: username,
+      fullname: fullname,
       email: email,
       password: hashedPassword,
     });
     const tokens = generateToken(user._id.toString());
     user.refreshTokens.push(tokens.refreshToken);
     await user.save();
-    res.status(201).json({
-      ...tokens,
-      user: {
-        _id: user._id,
-        username: user.username,
-        email: user.email,
-        profilePicture: user.profilePicture,
-      },
-    });
+    res.status(201).json(buildAuthResponse(user, tokens));
   } catch (err: any) {
     if (err?.code === 11000) {
       const field = Object.keys(err.keyPattern || {})[0];
-      if (field === "email") {
-        return sendError(400, "Email already exists", res);
-      }
-      return sendError(400, "Username already exists", res);
+      return sendError(400, getRegisterDuplicateMessage(field), res);
     }
     return sendError(500, "Internal server error", res);
   }
@@ -110,15 +274,7 @@ const login = async (req: Request, res: Response) => {
     const tokens = generateToken(user._id.toString());
     user.refreshTokens.push(tokens.refreshToken);
     await user.save();
-    res.status(200).json({
-      ...tokens,
-      user: {
-        _id: user._id,
-        username: user.username,
-        email: user.email,
-        profilePicture: user.profilePicture,
-      },
-    });
+    res.status(200).json(buildAuthResponse(user, tokens));
   } catch (err) {
     return sendError(500, "Internal server error", res);
   }
@@ -278,53 +434,84 @@ const gitHubLogin = async (req: Request, res: Response) => {
       return sendError(400, "GitHub account does not have a usable email", res);
     }
 
-    const profilePicture = githubUser.avatar_url || null;
-
-    let user = await User.findOne({ githubId: githubUser.id.toString() });
-
-    if (!user) {
-      user = await User.findOne({ email });
-    }
-
-    if (!user) {
-      const baseUsername = githubUser.login.replace(/[^a-zA-Z0-9._-]/g, "") || "githubuser";
-      let username = baseUsername;
-      let counter = 1;
-
-      while (await User.exists({ username })) {
-        username = `${baseUsername}${counter}`;
-        counter += 1;
-      }
-
-      user = await User.create({
-        username,
+    const result = await findOrCreateOAuthUser(
+      {
+        provider: "github",
+        providerId: githubUser.id.toString(),
         email,
-        githubId: githubUser.id.toString(),
-        profilePicture,
-      });
-    } else {
-      user.githubId = githubUser.id.toString();
-      user.email = email;
-      if (profilePicture) {
-        user.profilePicture = profilePicture;
-      }
+        usernameHint: githubUser.login,
+        fullname: githubUser.name?.trim() || githubUser.login,
+        profilePicture: githubUser.avatar_url || null,
+      },
+      req,
+    );
+
+    if (result.error) {
+      return sendError(result.error.code, result.error.message, res);
     }
+
+    const user = result.user!;
 
     const tokens = generateToken(user._id.toString());
     user.refreshTokens.push(tokens.refreshToken);
     await user.save();
 
-    res.status(200).json({
-      ...tokens,
-      user: {
-        _id: user._id,
-        username: user.username,
-        email: user.email,
-        profilePicture: user.profilePicture,
-      },
-    });
+    res.status(200).json(buildAuthResponse(user, tokens));
   } catch (err) {
     return sendError(500, "Internal server error", res);
+  }
+};
+
+const googleClient = new OAuth2Client();
+
+const googleLogin = async (req: Request, res: Response) => {
+  const credential = req.body.credential;
+
+  if (!credential) {
+    return sendError(400, "Google credential is required", res);
+  }
+
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  if (!clientId) {
+    return sendError(500, "Google OAuth is not configured", res);
+  }
+
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: clientId,
+    });
+
+    const payload = ticket.getPayload();
+    if (!payload?.sub || !payload?.email) {
+      return sendError(401, "Invalid Google credential", res);
+    }
+
+    const result = await findOrCreateOAuthUser(
+      {
+        provider: "google",
+        providerId: payload.sub,
+        email: payload.email,
+        usernameHint:
+          payload.email.split("@")[0] || payload.name || "googleuser",
+        fullname: payload.name || payload.email,
+        profilePicture: payload.picture || null,
+      },
+      req,
+    );
+
+    if (result.error) {
+      return sendError(result.error.code, result.error.message, res);
+    }
+
+    const user = result.user!;
+    const tokens = generateToken(user._id.toString());
+    user.refreshTokens.push(tokens.refreshToken);
+    await user.save();
+
+    return res.status(200).json(buildAuthResponse(user, tokens));
+  } catch (err) {
+    return sendError(401, "Invalid Google credential", res);
   }
 };
 
@@ -333,5 +520,6 @@ export default {
   login,
   logout,
   refreshToken,
+  googleLogin,
   gitHubLogin,
 };
