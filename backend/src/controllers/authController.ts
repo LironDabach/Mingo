@@ -464,6 +464,48 @@ const gitHubLogin = async (req: Request, res: Response) => {
 
 const googleClient = new OAuth2Client();
 
+const disconnectOAuthProvider = async (
+  req: Request,
+  res: Response,
+  provider: "google" | "github",
+) => {
+  const authenticatedUserId = getAuthenticatedUserId(req);
+  if (!authenticatedUserId) {
+    return sendError(
+      401,
+      "Unauthorized: missing or invalid Authorization header",
+      res,
+    );
+  }
+
+  try {
+    const fieldToUnset = provider === "github" ? "githubId" : "googleId";
+    const user = await User.findById(authenticatedUserId);
+
+    if (!user) {
+      return sendError(401, "Invalid access token", res);
+    }
+
+    if (!user.get(fieldToUnset)) {
+      return sendError(
+        400,
+        `${provider === "github" ? "GitHub" : "Google"} account is not linked`,
+        res,
+      );
+    }
+
+    await User.findByIdAndUpdate(authenticatedUserId, {
+      $unset: { [fieldToUnset]: 1 },
+    });
+
+    return res.status(200).json({
+      message: `${provider === "github" ? "GitHub" : "Google"} account disconnected successfully`,
+    });
+  } catch (_err) {
+    return sendError(500, "Internal server error", res);
+  }
+};
+
 const googleLogin = async (req: Request, res: Response) => {
   const credential = req.body.credential;
 
@@ -515,6 +557,14 @@ const googleLogin = async (req: Request, res: Response) => {
   }
 };
 
+const disconnectGoogle = async (req: Request, res: Response) => {
+  return disconnectOAuthProvider(req, res, "google");
+};
+
+const disconnectGitHub = async (req: Request, res: Response) => {
+  return disconnectOAuthProvider(req, res, "github");
+};
+
 export default {
   register,
   login,
@@ -522,4 +572,6 @@ export default {
   refreshToken,
   googleLogin,
   gitHubLogin,
+  disconnectGoogle,
+  disconnectGitHub,
 };
