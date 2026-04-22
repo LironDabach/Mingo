@@ -1,70 +1,91 @@
-import { useState } from 'react';
-import type { FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
-import './AuthPage.css';
-
-const GOOGLE_ICON = 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg';
+import type { FormEvent } from "react";
+import { useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { login } from "../lib/api";
+import { saveSession } from "../lib/auth";
+import "./AuthPage.css";
 
 const LoginPage = () => {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const location = useLocation();
+  const redirectTo = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    localStorage.setItem('token', 'prototype');
-    navigate('/dashboard');
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    setLoading(true);
+    setError("");
+
+    try {
+      const session = await login({
+        username: username.trim(),
+        password,
+      });
+
+      saveSession(session);
+      navigate(redirectTo || "/dashboard", { replace: true });
+    } catch (apiError: any) {
+      setError(apiError.response?.data?.message || "Unable to sign in right now.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="auth-container">
-      <div className="auth-brand">
-        <div className="auth-brand-logo">Mingo</div>
-        <div className="auth-brand-tagline">Manage your meetings smarter</div>
-      </div>
+    <div className="auth-shell">
+      <section className="auth-hero">
+        <div className="auth-hero-badge">Mingo workspace</div>
+        <h1>Bring your meetings, transcripts and GitHub tasks into one calm flow.</h1>
+        <p>
+          The frontend is now wired to your real server, so sign in with an existing backend
+          account to see live data.
+        </p>
+      </section>
 
-      <div className="auth-form-panel">
-        <div className="auth-form-wrapper">
-          <h1>Login</h1>
-
-          <form onSubmit={handleSubmit}>
-            <div className="auth-field">
-              <label>Email</label>
-              <input
-                type="email"
-                placeholder="ex. jackson@gmail.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-
-            <div className="auth-field">
-              <label>Password</label>
-              <input
-                type="password"
-                placeholder="••••••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-
-            <button type="submit" className="auth-submit-btn">
-              Login
-            </button>
-          </form>
-
-          <button className="auth-google-btn" type="button">
-            <img src={GOOGLE_ICON} alt="Google" />
-            Sign in with Google
-          </button>
-
-          <div className="auth-footer">
-            Don't have user? <a onClick={() => navigate('/register')}>Subscribe</a>
-          </div>
+      <section className="auth-card">
+        <div className="auth-card-header">
+          <span className="auth-kicker">Welcome back</span>
+          <h2>Sign in</h2>
         </div>
-      </div>
+
+        <form className="auth-form" onSubmit={handleSubmit}>
+          <label className="auth-field">
+            <span>Username</span>
+            <input
+              type="text"
+              placeholder="your_username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              required
+            />
+          </label>
+
+          <label className="auth-field">
+            <span>Password</span>
+            <input
+              type="password"
+              placeholder="Enter your password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+          </label>
+
+          {error ? <div className="auth-error">{error}</div> : null}
+
+          <button className="auth-submit-btn" type="submit" disabled={loading}>
+            {loading ? "Signing in..." : "Sign in"}
+          </button>
+        </form>
+
+        <div className="auth-footer">
+          <span>Need an account?</span>
+          <Link to="/register">Create one</Link>
+        </div>
+      </section>
     </div>
   );
 };

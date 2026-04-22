@@ -1,86 +1,132 @@
-import { useState } from 'react';
-import type { FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
-import './AuthPage.css';
+import type { FormEvent } from "react";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { register } from "../lib/api";
+import { saveSession } from "../lib/auth";
+import "./AuthPage.css";
 
 const RegisterPage = () => {
   const navigate = useNavigate();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [email, setEmail] = useState('');
+  const [fullname, setFullname] = useState("");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    localStorage.setItem('token', 'prototype');
-    navigate('/dashboard');
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const session = await register({
+        fullname: fullname.trim() || username.trim(),
+        username: username.trim(),
+        email: email.trim(),
+        password,
+      });
+
+      saveSession(session);
+      navigate("/dashboard", { replace: true });
+    } catch (apiError: any) {
+      setError(apiError.response?.data?.message || "Unable to create your account.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="auth-container">
-      <div className="auth-brand">
-        <div className="auth-brand-logo">Mingo</div>
-        <div className="auth-brand-tagline">Manage your meetings smarter</div>
-      </div>
+    <div className="auth-shell">
+      <section className="auth-hero">
+        <div className="auth-hero-badge">Mingo onboarding</div>
+        <h1>Create your account and start managing meeting output from one place.</h1>
+        <p>
+          Registration is connected directly to your backend auth flow, including token storage
+          and redirect into the workspace.
+        </p>
+      </section>
 
-      <div className="auth-form-panel">
-        <div className="auth-form-wrapper">
-          <a className="auth-back-link" onClick={() => navigate('/login')}>
-            ← Back to Login
-          </a>
-
-          <h1>Register</h1>
-
-          <form onSubmit={handleSubmit}>
-            <div className="auth-field">
-              <label>Username <span className="required">*</span></label>
-              <input
-                type="text"
-                placeholder="ex. jhon_dalorin (no spaces)"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-              />
-            </div>
-
-            <div className="auth-field">
-              <label>Password <span className="required">*</span></label>
-              <input
-                type="password"
-                placeholder="••••••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-
-            <div className="auth-field">
-              <label>Approve Password <span className="required">*</span></label>
-              <input
-                type="password"
-                placeholder="••••••••••••"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-              />
-            </div>
-
-            <div className="auth-field">
-              <label>Email</label>
-              <input
-                type="email"
-                placeholder="ex. jackson@gmail.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-
-            <button type="submit" className="auth-submit-btn">
-              Register
-            </button>
-          </form>
+      <section className="auth-card">
+        <div className="auth-card-header">
+          <span className="auth-kicker">Get started</span>
+          <h2>Create account</h2>
         </div>
-      </div>
+
+        <form className="auth-form" onSubmit={handleSubmit}>
+          <label className="auth-field">
+            <span>Full name</span>
+            <input
+              type="text"
+              placeholder="Shiran Levi"
+              value={fullname}
+              onChange={(event) => setFullname(event.target.value)}
+            />
+          </label>
+
+          <label className="auth-field">
+            <span>Username</span>
+            <input
+              type="text"
+              placeholder="shiran_levi"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              required
+            />
+          </label>
+
+          <label className="auth-field">
+            <span>Email</span>
+            <input
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+            />
+          </label>
+
+          <label className="auth-field">
+            <span>Password</span>
+            <input
+              type="password"
+              placeholder="Choose a password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+          </label>
+
+          <label className="auth-field">
+            <span>Confirm password</span>
+            <input
+              type="password"
+              placeholder="Repeat your password"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              required
+            />
+          </label>
+
+          {error ? <div className="auth-error">{error}</div> : null}
+
+          <button className="auth-submit-btn" type="submit" disabled={loading}>
+            {loading ? "Creating account..." : "Create account"}
+          </button>
+        </form>
+
+        <div className="auth-footer">
+          <span>Already registered?</span>
+          <Link to="/login">Back to sign in</Link>
+        </div>
+      </section>
     </div>
   );
 };

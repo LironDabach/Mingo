@@ -1,121 +1,110 @@
-import { useRef, useState } from 'react';
-import type { ChangeEvent } from 'react';
-import './TranscribePage.css';
+import type { ChangeEvent, FormEvent } from "react";
+import { useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import Header from "../components/Header/Header";
+import { uploadMeetingAudio } from "../lib/api";
+import "./TranscribePage.css";
 
 const TranscribePage = () => {
+  const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState("");
+  const [date, setDate] = useState("");
   const [loading, setLoading] = useState(false);
-  const [transcription, setTranscription] = useState('');
-  const [error, setError] = useState('');
-  const [audioUrl, setAudioUrl] = useState<string>('');
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [error, setError] = useState("");
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (selectedFile && selectedFile.type === 'audio/mpeg') {
-      setFile(selectedFile);
-      setError('');
-      // Create URL for audio playback
-      const url = URL.createObjectURL(selectedFile);
-      setAudioUrl(url);
-    } else {
-      setError('Please select a valid MP3 file');
-      setFile(null);
-      setAudioUrl('');
-    }
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0] || null;
+    setFile(selectedFile);
+    setError("");
   };
 
-  const handleUpload = async () => {
+  const handleUpload = async (event: FormEvent) => {
+    event.preventDefault();
     if (!file) {
-      setError('Please select a file first');
+      setError("Please select an MP3 file first.");
       return;
     }
 
     setLoading(true);
-    setError('');
-    setTranscription('');
+    setError("");
 
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append("file", file);
+    if (title.trim()) {
+      formData.append("title", title.trim());
+    }
+    if (date) {
+      formData.append("date", new Date(date).toISOString());
+    }
 
     try {
-      const response = await fetch('/api/transcribe', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error('Transcription failed');
-      }
-
-      const data = await response.json();
-      setTranscription(data.transcription || data.text);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred during transcription');
+      const result = await uploadMeetingAudio(formData);
+      navigate(`/meeting/${result.meeting._id}`);
+    } catch (apiError: any) {
+      setError(apiError.response?.data?.error || "Transcription failed.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="transcribe-container">
-      <div className="transcribe-card">
-        <h1>Audio Transcriber</h1>
-        <p className="subtitle">Upload an MP3 file to transcribe using OpenAI Whisper</p>
+    <div className="page-shell">
+      <Header />
 
-        <div className="upload-section">
+      <main className="page-main">
+        <section className="page-hero">
+          <div>
+            <span className="eyebrow">Transcript import</span>
+            <h1>Upload and transcribe</h1>
+            <p>Send an MP3 recording to the backend and open the generated meeting workspace.</p>
+          </div>
+        </section>
+
+        <form className="data-panel transcribe-form" onSubmit={handleUpload}>
+          <label className="modal-field">
+            <span>Meeting title</span>
+            <input
+              type="text"
+              placeholder="Optional title override"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+            />
+          </label>
+
+          <label className="modal-field">
+            <span>Meeting date</span>
+            <input
+              type="datetime-local"
+              value={date}
+              onChange={(event) => setDate(event.target.value)}
+            />
+          </label>
+
+          <button
+            className="upload-picker upload-picker--large"
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <strong>{file ? file.name : "Choose MP3 file"}</strong>
+            <span>{file ? "File attached and ready." : "Click here to pick a recording from your device."}</span>
+          </button>
           <input
+            ref={fileInputRef}
             type="file"
             accept="audio/mpeg,.mp3"
+            hidden
             onChange={handleFileChange}
-            disabled={loading}
-            className="file-input"
           />
-          {file && (
-            <>
-              <p className="file-name">
-                Selected: <strong>{file.name}</strong>
-              </p>
-              <div className="audio-player-section">
-                <audio
-                  ref={audioRef}
-                  src={audioUrl}
-                  controls
-                  className="audio-player"
-                >
-                  Your browser does not support the audio element.
-                </audio>
-              </div>
-            </>
-          )}
-        </div>
 
-        <button
-          onClick={handleUpload}
-          disabled={!file || loading}
-          className="upload-button"
-        >
-          {loading ? 'Transcribing...' : 'Transcribe'}
-        </button>
+          {error ? <div className="page-feedback page-feedback--error">{error}</div> : null}
 
-        {error && <div className="error-message">{error}</div>}
-
-        {transcription && (
-          <div className="transcription-section">
-            <h2>Transcription Result</h2>
-            <div className="transcription-text">{transcription}</div>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(transcription);
-                alert('Copied to clipboard!');
-              }}
-              className="copy-button"
-            >
-              Copy to Clipboard
-            </button>
-          </div>
-        )}
-      </div>
+          <button className="modal-submit" type="submit" disabled={loading}>
+            {loading ? "Uploading and transcribing..." : "Upload to backend"}
+          </button>
+        </form>
+      </main>
     </div>
   );
 };

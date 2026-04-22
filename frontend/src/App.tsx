@@ -1,23 +1,23 @@
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import type { ReactElement } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import "./App.css";
+import { isAuthenticated } from "./lib/auth";
 import DashboardPage from "./pages/DashboardPage";
-import TranscribePage from "./pages/TranscribePage";
-import LoginPage from "./pages/LoginPage";
-import RegisterPage from "./pages/RegisterPage";
-import MeetingPage from "./pages/MeetingPage";
-import TasksPage from "./pages/TasksPage";
 import HistoryPage from "./pages/HistoryPage";
+import LoginPage from "./pages/LoginPage";
+import MeetingPage from "./pages/MeetingPage";
+import RegisterPage from "./pages/RegisterPage";
+import TasksPage from "./pages/TasksPage";
+import TranscribePage from "./pages/TranscribePage";
 
-// Main app router — wraps protected routes with auth check
 function App() {
   const location = useLocation();
 
   const RequireAuth = ({ children }: { children: ReactElement }) => {
-    const isAuth = Boolean(localStorage.getItem("token"));
-    if (!isAuth) {
+    if (!isAuthenticated()) {
       return <Navigate to="/login" state={{ from: location }} replace />;
     }
+
     return children;
   };
 
@@ -44,6 +44,14 @@ function App() {
       />
       <Route
         path="/meeting"
+        element={
+          <RequireAuth>
+            <MeetingPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/meeting/:meetingId"
         element={
           <RequireAuth>
             <MeetingPage />

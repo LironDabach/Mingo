@@ -1,103 +1,117 @@
 .header {
+  width: min(1180px, calc(100% - 32px));
+  margin: 18px auto 0;
+  padding: 16px 18px;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 40px;
-  background: #fff;
-  border-bottom: 1px solid #e5e7eb;
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  gap: 18px;
 }
 
-.header-logo {
+.header-brand {
   display: flex;
-  align-items: baseline;
-  gap: 4px;
-  text-decoration: none;
+  align-items: center;
+  gap: 14px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
 }
 
-.header-logo-text {
-  font-size: 26px;
-  font-weight: 700;
-  color: #111827;
+.header-brand-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--orange), var(--blue));
+  color: white;
+  font-weight: 800;
+  font-size: 1.15rem;
 }
 
-.header-logo-text span {
-  color: #3b82f6;
+.header-brand-copy {
+  display: flex;
+  flex-direction: column;
 }
 
-.header-logo-sub {
-  font-size: 12px;
-  color: #9ca3af;
-  margin-left: 8px;
+.header-brand-copy strong {
+  font-size: 1.1rem;
+}
+
+.header-brand-copy small,
+.header-user-email {
+  color: var(--ink-soft);
 }
 
 .header-nav {
   display: flex;
   align-items: center;
-  gap: 32px;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 18px;
+  background: rgba(16, 32, 61, 0.05);
 }
 
 .header-nav a {
   text-decoration: none;
-  font-size: 15px;
-  font-weight: 500;
-  color: #6b7280;
-  transition: color 0.2s;
-  padding-bottom: 2px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  color: var(--ink-soft);
+  font-weight: 700;
 }
 
-.header-nav a:hover,
 .header-nav a.active {
-  color: #3b82f6;
-  border-bottom: 2px solid #3b82f6;
+  background: white;
+  color: var(--ink);
+  box-shadow: 0 10px 24px rgba(16, 32, 61, 0.08);
+}
+
+.header-actions,
+.header-user {
+  display: flex;
+  align-items: center;
 }
 
 .header-actions {
-  display: flex;
-  align-items: center;
-  gap: 20px;
+  gap: 12px;
 }
 
-.header-github {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  text-decoration: none;
-  font-size: 14px;
-  font-weight: 500;
-  color: #374151;
-  transition: color 0.2s;
+.header-user {
+  flex-direction: column;
+  align-items: flex-end;
 }
 
-.header-github:hover {
-  color: #3b82f6;
-}
-
-.header-github svg {
-  width: 20px;
-  height: 20px;
+.header-user-name {
+  font-weight: 800;
 }
 
 .header-logout {
-  background: none;
-  border: none;
+  padding: 11px 15px;
+  border-radius: 14px;
+  background: #10203d;
+  color: white;
   cursor: pointer;
-  color: #6b7280;
-  display: flex;
-  align-items: center;
-  padding: 6px;
-  border-radius: 6px;
-  transition: background 0.2s, color 0.2s;
+  font-weight: 700;
 }
 
-.header-logout:hover {
-  background: #f3f4f6;
-  color: #ef4444;
-}
+@media (max-width: 960px) {
+  .header {
+    width: min(100% - 20px, 1180px);
+    flex-direction: column;
+    align-items: stretch;
+  }
 
-.header-logout svg {
-  width: 22px;
-  height: 22px;
+  .header-nav {
+    justify-content: space-between;
+    overflow-x: auto;
+  }
+
+  .header-actions {
+    justify-content: space-between;
+  }
 }
