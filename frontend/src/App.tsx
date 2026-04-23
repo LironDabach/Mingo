@@ -8,6 +8,7 @@ import RegisterPage from "./pages/RegisterPage";
 import MeetingPage from "./pages/MeetingPage";
 import TasksPage from "./pages/TasksPage";
 import HistoryPage from "./pages/HistoryPage";
+import GitHubCallbackPage from "./pages/GitHubCallbackPage";
 
 // Main app router — wraps protected routes with auth check
 function App() {
@@ -26,6 +27,7 @@ function App() {
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/auth/github/callback" element={<GitHubCallbackPage />} />
       <Route
         path="/dashboard"
         element={

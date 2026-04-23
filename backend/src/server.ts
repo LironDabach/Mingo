@@ -3,15 +3,22 @@ import http from "http";
 import https from "https";
 import fs from "fs";
 import dotenv from "dotenv";
+import path from "path";
 
-dotenv.config();
+const isProduction = process.env.NODE_ENV === "production";
+const envPath = path.resolve(
+  __dirname,
+  isProduction ? "../.env" : "../.env.development",
+);
+
+dotenv.config({ path: envPath });
 
 const port = process.env.PORT;
 const httpsPort = process.env.HTTPS_PORT;
 
 initApp()
   .then((app) => {
-    if (process.env.NODE_ENV !== "production") {
+    if (!isProduction) {
       console.log("Development Environment");
       http.createServer(app).listen(port, () => {
         console.log(`Listening at http://localhost:${port}`);

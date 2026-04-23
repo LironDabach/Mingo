@@ -18,7 +18,6 @@ type AuthProviderProfile = {
   provider: "google" | "github";
   providerId: string;
   email: string;
-  usernameHint: string;
   fullname?: string;
   profilePicture?: string | null;
 };
@@ -30,7 +29,7 @@ const getRegisterDuplicateMessage = (field?: string) => {
     case "fullname":
       return "Fullname already exists";
     default:
-      return "Username already exists";
+      return "User already exists";
   }
 };
 
@@ -168,7 +167,7 @@ const findOrCreateOAuthUser = async (profile: AuthProviderProfile, req: Request)
     return { user };
   }
 
-  const username = await buildUniqueUsername(profile.usernameHint);
+  const username = await buildUniqueUsername(profile.email.split("@")[0] || profile.email);
   const createPayload: Record<string, any> = {
     username,
     fullname: profile.fullname || username,
@@ -206,26 +205,47 @@ const generateToken = (userId: string): GeneratedTokens => {
   return { token, refreshToken };
 };
 
-const register = async (req: Request, res: Response) => {
-  const username = req.body.username;
-  const email = req.body.email;
-  const password = req.body.password;
-  const fullname = req.body.fullname || username;
+const fetchGitHubResource = async (
+  url: string,
+  authHeaders: string[],
+): Promise<any> => {
+  let lastResponse: any = null;
 
-  if (!username || !email || !password) {
-    return sendError(400, "Username, email and password are required", res);
+  for (const authorization of authHeaders) {
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: authorization,
+        "User-Agent": "Mingo",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    });
+
+    if (response.ok) {
+      return response;
+    }
+
+    lastResponse = response;
+
+    if (response.status !== 401) {
+      return response;
+    }
   }
 
-  // Allow common username characters while still rejecting spaces/special symbols.
-  if (!/^[a-zA-Z0-9._-]+$/.test(username)) {
-    return sendError(
-      400,
-      "Username can only contain English letters, numbers, dots, underscores, and hyphens",
-      res,
-    );
+  return lastResponse;
+};
+
+const register = async (req: Request, res: Response) => {
+  const email = req.body.email;
+  const password = req.body.password;
+  const fullname = req.body.fullname?.trim() || email;
+
+  if (!email || !password) {
+    return sendError(400, "Email and password are required", res);
   }
 
   try {
+    const username = await buildUniqueUsername(email.split("@")[0] || email);
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
     const user = await User.create({
@@ -248,17 +268,17 @@ const register = async (req: Request, res: Response) => {
 };
 
 const login = async (req: Request, res: Response) => {
-  const username = req.body.username;
+  const email = req.body.email;
   const password = req.body.password;
 
-  if (!username || !password) {
-    return sendError(400, "Username and password are required", res);
+  if (!email || !password) {
+    return sendError(400, "Email and password are required", res);
   }
 
   try {
-    const user = await User.findOne({ username: username });
+    const user = await User.findOne({ email: email.trim() });
     if (!user) {
-      return sendError(401, "Invalid username or password", res);
+      return sendError(401, "Invalid email or password", res);
     }
     
     // Check if user has a password (Google users might not have one)
@@ -268,7 +288,7 @@ const login = async (req: Request, res: Response) => {
     
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return sendError(401, "Invalid username or password", res);
+      return sendError(401, "Invalid email or password", res);
     }
 
     const tokens = generateToken(user._id.toString());
@@ -353,44 +373,63 @@ const gitHubLogin = async (req: Request, res: Response) => {
   }
 
   try {
+    const tokenRequestBody = new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+      redirect_uri: redirectUri,
+    });
+
     const tokenResponse = await fetch(
       "https://github.com/login/oauth/access_token",
       {
         method: "POST",
         headers: {
           Accept: "application/json",
-          "Content-Type": "application/json",
+          "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: JSON.stringify({
-          client_id: clientId,
-          client_secret: clientSecret,
-          code,
-          redirect_uri: redirectUri,
-        }),
+        body: tokenRequestBody.toString(),
       },
     );
 
     const tokenData = (await tokenResponse.json()) as {
       access_token?: string;
       error?: string;
+      error_description?: string;
+      token_type?: string;
     };
 
     if (!tokenResponse.ok || !tokenData.access_token) {
-      return sendError(401, "Failed to authenticate with GitHub", res);
+      return sendError(
+        401,
+        tokenData.error_description || tokenData.error || "Failed to authenticate with GitHub",
+        res,
+      );
     }
 
     const githubToken = tokenData.access_token;
+    const primaryAuthHeader =
+      tokenData.token_type?.toLowerCase() === "bearer"
+        ? `Bearer ${githubToken}`
+        : `token ${githubToken}`;
+    const fallbackAuthHeader =
+      primaryAuthHeader.startsWith("Bearer ")
+        ? `token ${githubToken}`
+        : `Bearer ${githubToken}`;
+    const authHeaders = [primaryAuthHeader, fallbackAuthHeader];
 
-    const userResponse = await fetch("https://api.github.com/user", {
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${githubToken}`,
-        "User-Agent": "Mingo",
-      },
-    });
+    const userResponse = await fetchGitHubResource(
+      "https://api.github.com/user",
+      authHeaders,
+    );
 
     if (!userResponse.ok) {
-      return sendError(401, "Failed to fetch GitHub user", res);
+      const userErrorText = await userResponse.text();
+      return sendError(
+        401,
+        `Failed to fetch GitHub user${userErrorText ? `: ${userErrorText}` : ""}`,
+        res,
+      );
     }
 
     const githubUser = (await userResponse.json()) as {
@@ -408,13 +447,10 @@ const gitHubLogin = async (req: Request, res: Response) => {
     let email = githubUser.email;
 
     if (!email) {
-      const emailsResponse = await fetch("https://api.github.com/user/emails", {
-        headers: {
-          Accept: "application/vnd.github+json",
-          Authorization: `Bearer ${githubToken}`,
-          "User-Agent": "Mingo",
-        },
-      });
+      const emailsResponse = await fetchGitHubResource(
+        "https://api.github.com/user/emails",
+        authHeaders,
+      );
 
       if (emailsResponse.ok) {
         const emails = (await emailsResponse.json()) as Array<{
@@ -439,7 +475,6 @@ const gitHubLogin = async (req: Request, res: Response) => {
         provider: "github",
         providerId: githubUser.id.toString(),
         email,
-        usernameHint: githubUser.login,
         fullname: githubUser.name?.trim() || githubUser.login,
         profilePicture: githubUser.avatar_url || null,
       },
@@ -508,8 +543,9 @@ const disconnectOAuthProvider = async (
 
 const googleLogin = async (req: Request, res: Response) => {
   const credential = req.body.credential;
+  const accessToken = req.body.accessToken;
 
-  if (!credential) {
+  if (!credential && !accessToken) {
     return sendError(400, "Google credential is required", res);
   }
 
@@ -519,25 +555,55 @@ const googleLogin = async (req: Request, res: Response) => {
   }
 
   try {
-    const ticket = await googleClient.verifyIdToken({
-      idToken: credential,
-      audience: clientId,
-    });
+    let profile:
+      | {
+          sub?: string;
+          email?: string;
+          name?: string;
+          picture?: string;
+        }
+      | undefined;
 
-    const payload = ticket.getPayload();
-    if (!payload?.sub || !payload?.email) {
+    if (credential) {
+      const ticket = await googleClient.verifyIdToken({
+        idToken: credential,
+        audience: clientId,
+      });
+
+      profile = ticket.getPayload();
+    } else if (accessToken) {
+      const googleProfileResponse = await fetch(
+        "https://openidconnect.googleapis.com/v1/userinfo",
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+      );
+
+      if (!googleProfileResponse.ok) {
+        return sendError(401, "Invalid Google credential", res);
+      }
+
+      profile = (await googleProfileResponse.json()) as {
+        sub?: string;
+        email?: string;
+        name?: string;
+        picture?: string;
+      };
+    }
+
+    if (!profile?.sub || !profile?.email) {
       return sendError(401, "Invalid Google credential", res);
     }
 
     const result = await findOrCreateOAuthUser(
       {
         provider: "google",
-        providerId: payload.sub,
-        email: payload.email,
-        usernameHint:
-          payload.email.split("@")[0] || payload.name || "googleuser",
-        fullname: payload.name || payload.email,
-        profilePicture: payload.picture || null,
+        providerId: profile.sub,
+        email: profile.email,
+        fullname: profile.name || profile.email,
+        profilePicture: profile.picture || null,
       },
       req,
     );
@@ -565,6 +631,14 @@ const disconnectGitHub = async (req: Request, res: Response) => {
   return disconnectOAuthProvider(req, res, "github");
 };
 
+const getOAuthConfig = (_req: Request, res: Response) => {
+  return res.status(200).json({
+    googleClientId: process.env.GOOGLE_CLIENT_ID?.trim() || null,
+    githubClientId: process.env.GITHUB_CLIENT_ID?.trim() || null,
+    githubCallbackUrl: process.env.GITHUB_CALLBACK_URL?.trim() || null,
+  });
+};
+
 export default {
   register,
   login,
@@ -574,4 +648,5 @@ export default {
   gitHubLogin,
   disconnectGoogle,
   disconnectGitHub,
+  getOAuthConfig,
 };
