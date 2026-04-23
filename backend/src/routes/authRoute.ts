@@ -4,6 +4,8 @@ import { authenticate } from "../middleware/authMiddleware";
 
 const router = express.Router();
 
+router.get("/providers", authController.getOAuthConfig);
+
 /**
  * @openapi
  * /api/auth/register:
@@ -37,7 +39,7 @@ router.post("/register", authController.register);
  * /api/auth/login:
  *   post:
  *     tags: [Auth]
- *     summary: Log in with username and password
+ *     summary: Log in with email and password
  *     requestBody:
  *       required: true
  *       content:
