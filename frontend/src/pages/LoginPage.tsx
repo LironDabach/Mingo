@@ -10,6 +10,8 @@ import {
 
 const GOOGLE_ICON =
   'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg';
+const GITHUB_REDIRECT_KEY = 'github-oauth:redirect';
+const GITHUB_OAUTH_STATE_KEY = 'github-oauth:active';
 
 type GoogleTokenClient = {
   requestAccessToken: () => void;
@@ -201,6 +203,8 @@ const LoginPage = () => {
     }
 
     setIsGitHubSubmitting(true);
+    sessionStorage.removeItem(GITHUB_OAUTH_STATE_KEY);
+    sessionStorage.setItem(GITHUB_REDIRECT_KEY, '/dashboard');
 
     const params = new URLSearchParams({
       client_id: oauthConfig.githubClientId,

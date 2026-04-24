@@ -2,21 +2,16 @@ import { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import User from "../models/usersModel";
 import { AuthRequest } from "../middleware/authMiddleware";
-import {
-  buildUploadedFileUrl,
-  deleteUploadedFileByUrl,
-} from "../services/Picture/uploadPictureService";
 
-type UploadRequest = Request & { file?: Express.Multer.File | undefined };
-type AuthUploadRequest = AuthRequest & {
-  file?: Express.Multer.File | undefined;
-};
-
-const userProjection = "-password -refreshTokens";
+const userProjection =
+  "-password -refreshTokens -githubAccessToken -githubTokenType -githubTokenScope";
 const toSafeUserObject = (user: any) => {
   const userObj = user?.toObject ? user.toObject() : { ...user };
   delete userObj.password;
   delete userObj.refreshTokens;
+  delete userObj.githubAccessToken;
+  delete userObj.githubTokenType;
+  delete userObj.githubTokenScope;
   return userObj;
 };
 
@@ -25,8 +20,6 @@ const allowedFields = [
   "fullname",
   "email",
   "password",
-  "profilePicture",
-  "removeProfilePicture",
   "githubId",
   "googleId",
 ];
@@ -85,15 +78,12 @@ class UsersController {
     }
   }
 
-  async create(req: UploadRequest, res: Response) {
+  async create(req: Request, res: Response) {
     try {
       if (!hasOnlyAllowedFields(req.body)) {
         return res.status(400).send("Error: Invalid fields in request");
       }
       const payload = sanitizeUserPayload(req.body);
-      if (req.file?.filename) {
-        payload.profilePicture = buildUploadedFileUrl(req, req.file.filename);
-      }
 
       if (!payload.username || !payload.fullname || !payload.email) {
         return res
@@ -123,7 +113,7 @@ class UsersController {
     }
   }
 
-  async update(req: AuthUploadRequest, res: Response) {
+  async update(req: AuthRequest, res: Response) {
     const userId = req.params.id;
     try {
       const user = await User.findById(userId);
@@ -134,17 +124,10 @@ class UsersController {
         return res.status(403).send("Forbidden: Not the user owner");
       }
 
-      const oldProfilePicture = user.profilePicture;
       if (!hasOnlyAllowedFields(req.body)) {
         return res.status(400).send("Error: Invalid fields in request");
       }
       const payload = sanitizeUserPayload(req.body);
-
-      // Handle remove profile picture request
-      const shouldRemovePic =
-        req.body.removeProfilePicture === "true" ||
-        req.body.removeProfilePicture === true;
-      delete payload.removeProfilePicture;
 
       if (payload.email && !isValidEmail(payload.email)) {
         return res.status(400).send("Error: invalid email");
@@ -154,42 +137,17 @@ class UsersController {
         delete payload.password;
       }
 
-      if (req.file?.filename) {
-        payload.profilePicture = buildUploadedFileUrl(req, req.file.filename);
-      } else if (shouldRemovePic) {
-        // Will unset profilePicture below
-      }
-
       if (payload.password) {
         const salt = await bcrypt.genSalt(10);
         payload.password = await bcrypt.hash(payload.password, salt);
       }
 
-      let updated;
-      if (shouldRemovePic && !req.file?.filename) {
-        // Remove profile picture: unset field and apply other updates
-        updated = await User.findByIdAndUpdate(
-          userId,
-          { ...payload, $unset: { profilePicture: 1 } },
-          { new: true },
-        );
-      } else {
-        updated = await User.findByIdAndUpdate(userId, payload, {
-          new: true,
-        });
-      }
+      const updated = await User.findByIdAndUpdate(userId, payload, {
+        new: true,
+      });
 
       if (!updated) {
         return res.status(404).send("Error: User not found");
-      }
-
-      // Clean up old profile picture file
-      if (
-        oldProfilePicture &&
-        (shouldRemovePic ||
-          (req.file?.filename && oldProfilePicture !== updated.profilePicture))
-      ) {
-        await deleteUploadedFileByUrl(oldProfilePicture);
       }
 
       return res.json(toSafeUserObject(updated));
@@ -221,7 +179,6 @@ class UsersController {
         return res.status(404).send("Error: User not found");
       }
 
-      await deleteUploadedFileByUrl(deleted.profilePicture);
       return res.status(200).json(toSafeUserObject(deleted));
     } catch (err) {
       console.error(err);

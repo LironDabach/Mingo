@@ -60,6 +60,31 @@
   gap: 20px;
 }
 
+.header-settings {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  color: #6b7280;
+  border-radius: 999px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+
+.header-settings:hover,
+.header-settings.active {
+  color: #2563eb;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.header-settings svg {
+  width: 18px;
+  height: 18px;
+}
+
 .header-github {
   display: flex;
   align-items: center;

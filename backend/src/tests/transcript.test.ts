@@ -128,7 +128,8 @@ describe("Transcript API", () => {
       expect(savedMeeting?.participants.map((participant) => participant.toString())).toEqual([
         userId,
       ]);
-      expect(savedMeeting?.transcriptId.toString()).toBe(createdTranscriptId);
+      expect(savedMeeting?.transcriptId).toBeDefined();
+      expect(savedMeeting?.transcriptId?.toString()).toBe(createdTranscriptId);
 
       expect(savedTranscript).not.toBeNull();
       expect(savedTranscript?.meetingID.toString()).toBe(createdMeetingId);

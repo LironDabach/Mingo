@@ -1,45 +1,190 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { fetchWithAuth, getAuthHeaders, getStoredUser, parseResponseBody } from '../../lib/auth';
 import './StartMeetingModal.css';
 
 interface StartMeetingModalProps {
   onClose: () => void;
 }
 
-const MOCK_ATTENDEES = [
-  'liron_dabach',
-  'shiran_levi',
-  'sean_nedorez',
-  'tal_gohar',
-  'or_sivan',
-  'matan_gal',
-];
+type UserOption = {
+  _id: string;
+  username: string;
+  fullname: string;
+  email: string;
+};
+
+type AttendeeEntry = {
+  email: string;
+  displayName: string;
+  isRegistered: boolean;
+};
+
+type GitHubRepository = {
+  id: number;
+  name: string;
+  fullName: string;
+  owner: string;
+  private: boolean;
+};
+
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
-  const [search, setSearch] = useState('');
-  const [attendees, setAttendees] = useState<string[]>(MOCK_ATTENDEES);
+  const navigate = useNavigate();
+  const currentUser = getStoredUser();
+  const [emailInput, setEmailInput] = useState('');
+  const [attendees, setAttendees] = useState<AttendeeEntry[]>([]);
+  const [repository, setRepository] = useState('');
+  const [repositories, setRepositories] = useState<GitHubRepository[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [availableUsers, setAvailableUsers] = useState<UserOption[]>([]);
+  const [usersLoadError, setUsersLoadError] = useState('');
+  const [reposLoadError, setReposLoadError] = useState('');
+  const [error, setError] = useState('');
 
-  const handleRemoveAttendee = (name: string) => {
-    setAttendees((prev) => prev.filter((a) => a !== name));
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        const response = await fetchWithAuth('/api/user');
+
+        if (!response.ok) {
+          const body = await parseResponseBody(response);
+          const message =
+            typeof body === 'object' && body && 'message' in body && typeof body.message === 'string'
+              ? body.message
+              : response.status === 401
+                ? 'Your session expired. Please sign in again.'
+                : 'Unable to load users right now.';
+          throw new Error(message);
+        }
+
+        const data = (await response.json()) as UserOption[];
+        const users = Array.isArray(data) ? data : [];
+        setAvailableUsers(
+          users.filter((user) => user.email && user._id !== currentUser?._id),
+        );
+        setUsersLoadError('');
+      } catch (err) {
+        setUsersLoadError(
+          err instanceof Error ? err.message : 'Unable to load users right now.',
+        );
+      }
+    };
+
+    void loadUsers();
+  }, [currentUser?._id]);
+
+  useEffect(() => {
+    const loadRepositories = async () => {
+      try {
+        const response = await fetchWithAuth('/api/auth/github/repos');
+        const data = await parseResponseBody(response);
+
+        if (!response.ok) {
+          const message =
+            data && typeof data === 'object' && 'message' in data && typeof data.message === 'string'
+              ? data.message
+              : 'Unable to load GitHub repositories right now.';
+          throw new Error(message);
+        }
+
+        setRepositories(Array.isArray(data) ? (data as GitHubRepository[]) : []);
+        setReposLoadError('');
+      } catch (err) {
+        setReposLoadError(
+          err instanceof Error
+            ? err.message
+            : 'Unable to load GitHub repositories right now.',
+        );
+      }
+    };
+
+    void loadRepositories();
+  }, []);
+
+  const handleRemoveAttendee = (email: string) => {
+    setAttendees((prev) => prev.filter((attendee) => attendee.email !== email));
   };
 
   const handleAddAttendee = () => {
-    const trimmed = search.trim();
-    if (trimmed && !attendees.includes(trimmed)) {
-      setAttendees((prev) => [...prev, trimmed]);
-      setSearch('');
+    const normalizedEmail = emailInput.trim().toLowerCase();
+
+    if (!normalizedEmail) {
+      return;
+    }
+
+    if (!emailPattern.test(normalizedEmail)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
+    if (attendees.some((attendee) => attendee.email === normalizedEmail)) {
+      setEmailInput('');
+      return;
+    }
+
+    const matchedUser = availableUsers.find(
+      (user) => user.email.toLowerCase() === normalizedEmail,
+    );
+
+    setAttendees((prev) => [
+      ...prev,
+      {
+        email: normalizedEmail,
+        displayName: matchedUser?.fullname || normalizedEmail,
+        isRegistered: Boolean(matchedUser),
+      },
+    ]);
+    setEmailInput('');
+    setError('');
+  };
+
+  const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      handleAddAttendee();
     }
   };
 
-  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleAddAttendee();
+  const handleCreateMeeting = async () => {
+    if (isSubmitting) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      const response = await fetch('/api/meetings/meetings', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          title: repository.trim() ? `${repository.trim()} Live Meeting` : 'Live Meeting',
+          gitHubRepoName: repository.trim(),
+          attendeeEmails: attendees.map((attendee) => attendee.email),
+        }),
+      });
+
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || 'Unable to start meeting right now.');
+      }
+
+      const meeting = await response.json();
+      localStorage.setItem('currentMeetingId', meeting._id);
+      onClose();
+      navigate('/meetings/live');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to start meeting right now.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content start-meeting-narrow" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-content start-meeting-modal" onClick={(event) => event.stopPropagation()}>
         <button className="modal-close" onClick={onClose}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="18" y1="6" x2="6" y2="18" />
@@ -49,42 +194,82 @@ const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
 
         <h1 className="modal-title">Start Meeting</h1>
 
-        <div className="start-meeting-body">
-          <h3 className="modal-column-title">Attendees</h3>
-          <div className="attendees-search">
-            <input
-              type="text"
-              placeholder="ex: liron_dabach"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={handleSearchKeyDown}
-            />
-            <button className="attendees-search-btn" onClick={handleAddAttendee}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-            </button>
+        <div className="start-meeting-grid">
+          <div className="start-meeting-column">
+            <div className="start-meeting-field">
+              <h3 className="modal-column-title">GitHub Repository</h3>
+              <select
+                className="start-meeting-repository"
+                value={repository}
+                onChange={(event) => setRepository(event.target.value)}
+              >
+                <option value="">Select repository</option>
+                {repositories.map((repo) => (
+                  <option key={repo.id} value={repo.name}>
+                    {repo.fullName}
+                  </option>
+                ))}
+              </select>
+              {reposLoadError && (
+                <p className="start-meeting-users-error">{reposLoadError}</p>
+              )}
+            </div>
           </div>
-          <ul className="attendees-list">
-            {attendees.map((name) => (
-              <li key={name} className="attendee-item">
-                <span className="attendee-dot" />
-                <span className="attendee-name">{name}</span>
-                <button className="attendee-remove" onClick={() => handleRemoveAttendee(name)}>
-                  &times;
+
+          <div className="start-meeting-column">
+            <div className="start-meeting-field">
+              <h3 className="modal-column-title">Attendees</h3>
+              <div className="attendees-search start-meeting-attendees-search">
+                <input
+                  type="email"
+                  placeholder="Add email and press Enter"
+                  value={emailInput}
+                  onChange={(event) => setEmailInput(event.target.value)}
+                  onKeyDown={handleInputKeyDown}
+                />
+                <button type="button" className="attendees-search-btn" onClick={handleAddAttendee}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
                 </button>
-              </li>
-            ))}
-          </ul>
+              </div>
+
+              <ul className="attendees-list start-meeting-attendees-list">
+                {attendees.map((attendee) => (
+                  <li key={attendee.email} className="attendee-item start-meeting-attendee-item">
+                    <span className="attendee-dot" />
+                    <span className="attendee-name">
+                      <strong>{attendee.displayName}</strong>
+                      {!attendee.isRegistered && attendee.displayName !== attendee.email && (
+                        <small>{attendee.email}</small>
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      className="attendee-remove"
+                      onClick={() => handleRemoveAttendee(attendee.email)}
+                    >
+                      &times;
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {usersLoadError && (
+                <p className="start-meeting-users-error">{usersLoadError}</p>
+              )}
+            </div>
+          </div>
         </div>
 
-        <button className="modal-create-btn">
+        {error && <p className="start-meeting-error">{error}</p>}
+
+        <button className="modal-create-btn" type="button" onClick={handleCreateMeeting} disabled={isSubmitting}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
-          Start
+          {isSubmitting ? 'Creating...' : 'Create'}
         </button>
       </div>
     </div>

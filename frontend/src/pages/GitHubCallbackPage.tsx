@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { parseResponseBody, saveAuthSession } from '../lib/auth';
+import { parseResponseBody, refreshAccessToken, saveAuthSession } from '../lib/auth';
 import './AuthPage.css';
 
 const GITHUB_OAUTH_STATE_KEY = 'github-oauth:active';
+const GITHUB_REDIRECT_KEY = 'github-oauth:redirect';
 
 const GitHubCallbackPage = () => {
   const navigate = useNavigate();
@@ -34,7 +35,8 @@ const GitHubCallbackPage = () => {
       }
 
       if (existingExchangeState === 'done' && localStorage.getItem('token')) {
-        navigate('/dashboard', { replace: true });
+        const redirectTarget = sessionStorage.getItem(GITHUB_REDIRECT_KEY) || '/dashboard';
+        navigate(redirectTarget, { replace: true });
         return;
       }
 
@@ -46,10 +48,24 @@ const GitHubCallbackPage = () => {
       window.history.replaceState({}, document.title, '/auth/github/callback');
 
       try {
+        const redirectTarget = sessionStorage.getItem(GITHUB_REDIRECT_KEY) || '/dashboard';
+        const shouldRefreshSession = redirectTarget === '/settings' && localStorage.getItem('refreshToken');
+
+        if (shouldRefreshSession) {
+          try {
+            await refreshAccessToken();
+          } catch (_error) {
+            // If refresh fails, the request below will continue as a plain sign-in flow.
+          }
+        }
+
         const response = await fetch('/api/auth/github', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...(localStorage.getItem('token')
+              ? { Authorization: `Bearer ${localStorage.getItem('token')}` }
+              : {}),
           },
           body: JSON.stringify({ code }),
         });
@@ -70,9 +86,11 @@ const GitHubCallbackPage = () => {
 
         saveAuthSession(data);
         sessionStorage.setItem(GITHUB_OAUTH_STATE_KEY, 'done');
-        navigate('/dashboard', { replace: true });
+        sessionStorage.removeItem(GITHUB_REDIRECT_KEY);
+        navigate(redirectTarget, { replace: true });
       } catch (err) {
         sessionStorage.removeItem(GITHUB_OAUTH_STATE_KEY);
+        sessionStorage.removeItem(GITHUB_REDIRECT_KEY);
         setError(
           err instanceof Error
             ? err.message
