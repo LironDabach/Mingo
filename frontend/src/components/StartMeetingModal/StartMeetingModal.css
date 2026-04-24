@@ -405,7 +405,7 @@
 
 .modal-create-btn:disabled {
   opacity: 0.75;
-  cursor: wait;
+  cursor: not-allowed;
   box-shadow: none;
 }
 

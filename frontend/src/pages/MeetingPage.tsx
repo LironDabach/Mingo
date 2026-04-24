@@ -1,15 +1,37 @@
-﻿import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header/Header';
+import { getStoredUser } from '../lib/auth';
 import './MeetingPage.css';
 
-interface ChatMessage {
+type DraftAttendee = {
+  email: string;
+  displayName: string;
+  isRegistered: boolean;
+};
+
+type MeetingDraft = {
+  id?: string;
+  title?: string;
+  date?: string;
+  gitHubRepoName?: string;
+  attendees?: DraftAttendee[];
+};
+
+type ChatMessage = {
   id: number;
   sender: 'user' | 'mingo';
   text: string;
-}
+};
 
-interface Task {
+type Topic = {
+  id: number;
+  title: string;
+  description: string;
+};
+
+type Task = {
   id: number;
   title: string;
   assignee: string;
@@ -17,462 +39,467 @@ interface Task {
   priority: 'High' | 'Medium' | 'Low';
   tag: string;
   done: boolean;
-  fromMeeting?: string;
-}
+};
 
-const ATTENDEES = ['Liron Dabach', 'Shiran Levi', 'Sean Nedorez', 'Tal Gohar'];
+const DEFAULT_TOPICS: Topic[] = [
+  {
+    id: 1,
+    title: 'Project description and functionality',
+    description: 'Define the main flow, product boundaries, and meeting goals.',
+  },
+  {
+    id: 2,
+    title: 'Design and product direction',
+    description: 'Review the next UI iteration and align on experience details.',
+  },
+  {
+    id: 3,
+    title: 'Engineering follow-ups',
+    description: 'Track the technical actions that came out of this discussion.',
+  },
+];
 
-const MOCK_MESSAGES: ChatMessage[] = [
+const DEFAULT_TASKS: Task[] = [
+  {
+    id: 1,
+    title: 'Project description',
+    assignee: 'Planning owner',
+    due: 'Due to 30.12.25',
+    priority: 'High',
+    tag: 'MINGO-12',
+    done: true,
+  },
+  {
+    id: 2,
+    title: 'Figma Design',
+    assignee: 'Planning owner',
+    due: 'Due to 30.12.25',
+    priority: 'Low',
+    tag: 'MINGO-41',
+    done: false,
+  },
+  {
+    id: 3,
+    title: 'Architecture',
+    assignee: 'Planning owner',
+    due: 'Due to 30.12.25',
+    priority: 'Medium',
+    tag: 'MINGO-32',
+    done: false,
+  },
+];
+
+const INITIAL_MESSAGES: ChatMessage[] = [
   { id: 1, sender: 'user', text: "What's the last task given in this meeting?" },
-  { id: 2, sender: 'mingo', text: 'The Figma Design task that Liron Dabach is assigned to.\nPay attention that this task has to be done by 30.12.25!' },
+  {
+    id: 2,
+    sender: 'mingo',
+    text: 'The Figma Design task is assigned and still open. Pay attention that it is due by 30.12.25.',
+  },
   { id: 3, sender: 'user', text: 'Thank you Mingo!' },
   { id: 4, sender: 'mingo', text: 'Always here to manage your meetings smarter!' },
 ];
 
-const PREVIOUS_TASKS: Task[] = [
-  { id: 101, title: 'Setup CI/CD Pipeline', assignee: 'Sean Nedorez', due: 'Due to 15.11.25', priority: 'High', tag: 'MINGO-08', done: true, fromMeeting: 'Sprint 4 Kickoff â€” 10.11.25' },
-  { id: 102, title: 'API Documentation', assignee: 'Liron Dabach', due: 'Due to 20.11.25', priority: 'Medium', tag: 'MINGO-09', done: false, fromMeeting: 'Sprint 4 Kickoff â€” 10.11.25' },
-  { id: 103, title: 'Database Schema Review', assignee: 'Tal Gohar', due: 'Due to 12.11.25', priority: 'Low', tag: 'MINGO-07', done: true, fromMeeting: 'Architecture Review â€” 05.11.25' },
-];
+const formatMeetingDate = (value?: string) => {
+  const date = value ? new Date(value) : new Date();
 
-const INITIAL_CURRENT_TASKS: Task[] = [
-  { id: 1, title: 'Project description', assignee: 'Liron Dabach', due: 'Due to 30.12.25', priority: 'High', tag: 'MINGO-12', done: true },
-  { id: 2, title: 'Figma Design', assignee: 'Liron Dabach', due: 'Due to 30.12.25', priority: 'Low', tag: 'MINGO-41', done: false },
-  { id: 3, title: 'Architecture', assignee: 'Tal Gohar', due: 'Due to 30.12.25', priority: 'Medium', tag: 'MINGO-32', done: false },
-];
+  if (Number.isNaN(date.getTime())) {
+    return 'Today';
+  }
+
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+};
+
+const buildMeetingNarrative = (
+  title: string,
+  repo: string,
+  attendeeCount: number,
+  openTaskCount: number,
+) =>
+  `${title} focused on aligning the team around ${repo}. The discussion covered product direction, design follow-ups, and the next engineering steps. ${attendeeCount} participants took part in the meeting, and the conversation ended with ${openTaskCount} action items that still need follow-up.`;
 
 const MeetingPage = () => {
-  const [messages, setMessages] = useState<ChatMessage[]>(MOCK_MESSAGES);
-  const [input, setInput] = useState('');
-  const [currentTasks, setCurrentTasks] = useState<Task[]>(INITIAL_CURRENT_TASKS);
-  const [showCreateTask, setShowCreateTask] = useState(false);
+  const navigate = useNavigate();
+  const storedUser = getStoredUser();
+  const rawDraft = localStorage.getItem('currentMeetingDraft');
+  const parsedDraft = rawDraft ? (JSON.parse(rawDraft) as MeetingDraft) : null;
 
-  // New task form state
+  const attendees = useMemo(() => {
+    const draftAttendees = parsedDraft?.attendees || [];
+    const currentUserName = storedUser?.fullname || storedUser?.email || 'You';
+    const merged = [{ displayName: currentUserName, email: storedUser?.email || '', isRegistered: true }, ...draftAttendees];
+
+    return merged.filter(
+      (attendee, index, array) =>
+        array.findIndex((candidate) => candidate.email === attendee.email) === index,
+    );
+  }, [parsedDraft?.attendees, storedUser?.email, storedUser?.fullname]);
+
+  const meetingTitle = parsedDraft?.title || 'Planning Mingo Project';
+  const repositoryLabel = parsedDraft?.gitHubRepoName || 'Mingo';
+  const meetingDate = formatMeetingDate(parsedDraft?.date);
+  const meetingDuration = '43 min';
+
+  const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
+  const [chatInput, setChatInput] = useState('');
   const [showSummary, setShowSummary] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+  const [tasks, setTasks] = useState<Task[]>(DEFAULT_TASKS);
 
-  // New task form state
-  const [newTitle, setNewTitle] = useState('');
-  const [newAssignee, setNewAssignee] = useState(ATTENDEES[0] ?? '');
-  const [newPriority, setNewPriority] = useState<'High' | 'Medium' | 'Low'>('Medium');
-  const [newDue, setNewDue] = useState('');
+  const completedTasks = tasks.filter((task) => task.done);
+  const openTasks = tasks.filter((task) => !task.done);
+  const summaryNarrative = buildMeetingNarrative(
+    meetingTitle,
+    repositoryLabel,
+    attendees.length,
+    openTasks.length,
+  );
 
-  const handleSend = (e: FormEvent) => {
-    e.preventDefault();
-    const trimmed = input.trim();
-    if (!trimmed) return;
+  const handleSend = (event: FormEvent) => {
+    event.preventDefault();
+    const trimmed = chatInput.trim();
 
-    const userMsg: ChatMessage = { id: Date.now(), sender: 'user', text: trimmed };
-    setMessages((prev) => [...prev, userMsg]);
-    setInput('');
+    if (!trimmed) {
+      return;
+    }
 
-    setTimeout(() => {
-      const mingoMsg: ChatMessage = {
+    setMessages((prev) => [
+      ...prev,
+      { id: Date.now(), sender: 'user', text: trimmed },
+      {
         id: Date.now() + 1,
         sender: 'mingo',
-        text: "I'm analyzing your request. Let me check the meeting data...",
-      };
-      setMessages((prev) => [...prev, mingoMsg]);
-    }, 800);
-  };
-
-  const handleCreateTask = (e: FormEvent) => {
-    e.preventDefault();
-    if (!newTitle.trim()) return;
-    const task: Task = {
-      id: Date.now(),
-      title: newTitle.trim(),
-      assignee: newAssignee,
-      due: newDue ? `Due to ${newDue}` : '',
-      priority: newPriority,
-      tag: `MINGO-${Math.floor(Math.random() * 90) + 10}`,
-      done: false,
-    };
-    setCurrentTasks((prev) => [...prev, task]);
-    setNewTitle('');
-    setNewAssignee(ATTENDEES[0] ?? '');
-    setNewPriority('Medium');
-    setNewDue('');
-    setShowCreateTask(false);
-  };
-
-  const toggleTaskDone = (id: number) => {
-    setCurrentTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t))
-    );
+        text: 'The AI conversation area is ready here. Backend connection can be added later.',
+      },
+    ]);
+    setChatInput('');
   };
 
   const handleEndMeeting = () => {
     setShowSummary(true);
     setEmailSent(false);
+    localStorage.removeItem('currentMeetingDraft');
+    localStorage.removeItem('currentMeetingId');
   };
 
-  const handleSendEmail = () => {
+  const handleSendSummaryEmail = () => {
     setEmailSent(true);
-    setTimeout(() => setEmailSent(false), 3000);
   };
 
-  const completedCurrent = currentTasks.filter((t) => t.done);
-  const remainingCurrent = currentTasks.filter((t) => !t.done);
-  const completedPrevious = PREVIOUS_TASKS.filter((t) => t.done);
-  const remainingPrevious = PREVIOUS_TASKS.filter((t) => !t.done);
+  const toggleTask = (taskId: number) => {
+    setTasks((prev) =>
+      prev.map((task) => (task.id === taskId ? { ...task, done: !task.done } : task)),
+    );
+  };
 
   return (
-    <div className="meeting-layout">
-      <div className="meeting-top-bar">Live Meeting</div>
+    <div className="meeting-page">
       <Header />
 
-      <main className="meeting-main">
-        {/* Meeting Header */}
-        <div className="meeting-header">
-          <div className="meeting-header-left">
-            <div className="meeting-title-row">
-              <h1>Planning Mingo Project</h1>
-              <button className="meeting-edit-btn" title="Edit">
+      <main className="meeting-page__main">
+        <section className="meeting-hero">
+          <div className="meeting-hero__content">
+            <div className="meeting-hero__headline">
+              <h1>{meetingTitle}</h1>
+              <button type="button" className="meeting-hero__edit" aria-label="Edit meeting">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-                  <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" />
                 </svg>
               </button>
             </div>
-            <div className="meeting-meta">
-              <span className="meeting-meta-item">
+
+            <div className="meeting-hero__meta">
+              <span>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+                  <rect x="3" y="4" width="18" height="18" rx="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
                 </svg>
-                17.11.25, 10:00
+                {meetingDate}
               </span>
-              <span className="meeting-meta-divider">|</span>
-              <span className="meeting-meta-item">
+              <span className="meeting-hero__divider" />
+              <span>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" />
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
                 </svg>
-                4
+                {attendees.length}
               </span>
-              <span className="meeting-meta-divider">|</span>
-              <span className="meeting-meta-item">
+              <span className="meeting-hero__divider" />
+              <span>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
                 </svg>
                 43 min
               </span>
+              <span className="meeting-hero__divider" />
+              <span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m21 16-4 4-4-4" />
+                  <path d="M17 20V4" />
+                  <path d="m3 8 4-4 4 4" />
+                  <path d="M7 4v16" />
+                </svg>
+                {repositoryLabel}
+              </span>
             </div>
           </div>
-          <div className="meeting-header-actions">
-            <button className="end-meeting-btn" onClick={handleEndMeeting}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" />
+
+          <div className="meeting-hero__actions">
+            <button type="button" className="meeting-hero__end" onClick={handleEndMeeting}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="6" y="5" width="4" height="14" rx="1" />
+                <rect x="14" y="5" width="4" height="14" rx="1" />
               </svg>
               End Meeting
             </button>
           </div>
-        </div>
+        </section>
 
-        {/* Content Grid */}
-        <div className="meeting-grid">
-          {/* Chat */}
-          <div className="meeting-chat">
-            <div className="meeting-chat-header">
-              Chat with <span className="mingo-brand">Min<span>go</span></span>
-            </div>
-            <div className="meeting-chat-messages">
-              {messages.map((msg) => (
-                <div key={msg.id} className={`chat-msg chat-msg--${msg.sender}`}>
-                  {msg.sender === 'user' && (
-                    <div className="chat-avatar chat-avatar--user">
-                      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 1.7-10 5v2h20v-2c0-3.3-6.7-5-10-5z" /></svg>
+        <section className="meeting-content">
+          <article className="meeting-chat-card">
+            <header className="meeting-card__header">
+              <h2>
+                Chat with <span>Mingo</span>
+              </h2>
+            </header>
+
+            <div className="meeting-chat-card__body">
+              {messages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`meeting-message meeting-message--${message.sender}`}
+                >
+                  {message.sender === 'user' && (
+                    <div className="meeting-message__avatar meeting-message__avatar--user">
+                      <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 12c2.8 0 5-2.4 5-5.3S14.8 1.5 12 1.5 7 3.9 7 6.8s2.2 5.2 5 5.2Zm0 2.5c-4.1 0-8 2.1-8 5v1.5h16V19.5c0-2.9-3.9-5-8-5Z" />
+                      </svg>
                     </div>
                   )}
-                  <div className="chat-bubble">
-                    {msg.text.split('\n').map((line, i) => (
-                      <span key={i}>{line}{i < msg.text.split('\n').length - 1 && <br />}</span>
-                    ))}
-                  </div>
-                  {msg.sender === 'mingo' && (
-                    <div className="chat-avatar chat-avatar--mingo">
-                      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" /></svg>
+                  <div className="meeting-message__bubble">{message.text}</div>
+                  {message.sender === 'mingo' && (
+                    <div className="meeting-message__avatar meeting-message__avatar--mingo">
+                      <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2a8 8 0 0 0-8 8v3.6c0 .7-.3 1.3-.8 1.7L2 16.5V18h20v-1.5l-1.2-1.2c-.5-.5-.8-1.1-.8-1.7V10a8 8 0 0 0-8-8Zm-3 7h6v2H9V9Zm0 4h4v2H9v-2Z" />
+                      </svg>
                     </div>
                   )}
                 </div>
               ))}
             </div>
-            <form className="meeting-chat-input" onSubmit={handleSend}>
+
+            <form className="meeting-chat-card__input" onSubmit={handleSend}>
               <input
                 type="text"
                 placeholder="Ask anything"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
               />
-              <button type="submit" className="chat-send-btn">
+              <button type="submit" aria-label="Send message">
                 <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-5H7l5-7v5h4l-5 7z" />
+                  <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm1 14.5h-2v-4H8l4-5v4h3Z" />
                 </svg>
               </button>
             </form>
-          </div>
+          </article>
 
-          {/* Right Side */}
-          <div className="meeting-right">
-            {/* Current Meeting Tasks */}
-            <div className="meeting-section">
-              <div className="meeting-section-header">
-                <h2 className="meeting-section-title">Current Meeting Tasks</h2>
-                <button className="add-task-btn" onClick={() => setShowCreateTask(true)}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                  Add Task
-                </button>
+          <div className="meeting-side">
+            <article className="meeting-card">
+              <header className="meeting-card__header">
+                <h2>Topics</h2>
+              </header>
+
+              <div className="meeting-topics">
+                {DEFAULT_TOPICS.map((topic) => (
+                  <div key={topic.id} className="meeting-topic">
+                    <div className="meeting-topic__icon">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 2v4" />
+                        <path d="M12 18v4" />
+                        <path d="m4.93 4.93 2.83 2.83" />
+                        <path d="m16.24 16.24 2.83 2.83" />
+                        <path d="M2 12h4" />
+                        <path d="M18 12h4" />
+                        <path d="m4.93 19.07 2.83-2.83" />
+                        <path d="m16.24 7.76 2.83-2.83" />
+                      </svg>
+                    </div>
+                    <div className="meeting-topic__content">
+                      <strong>{topic.title}</strong>
+                      <span>{topic.description}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="meeting-tasks-list">
-                {currentTasks.map((task) => (
-                  <div key={task.id} className="meeting-task-item">
-                    <span
-                      className={`mt-checkbox ${task.done ? 'mt-checkbox--done' : ''}`}
-                      onClick={() => toggleTaskDone(task.id)}
+            </article>
+
+            <article className="meeting-card">
+              <header className="meeting-card__header">
+                <h2>Open Tasks</h2>
+              </header>
+
+              <div className="meeting-tasks">
+                {tasks.map((task) => (
+                  <div key={task.id} className="meeting-task">
+                    <button
+                      type="button"
+                      className={`meeting-task__check ${task.done ? 'meeting-task__check--done' : ''}`}
+                      onClick={() => toggleTask(task.id)}
+                      aria-label={task.done ? 'Mark as open' : 'Mark as done'}
                     >
                       {task.done && (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
                       )}
-                    </span>
-                    <div className="mt-task-info">
-                      <span className={`mt-task-title ${task.done ? 'mt-task-title--done' : ''}`}>{task.title}</span>
-                      <span className="mt-task-meta">
-                        <svg className="mt-meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-                        {task.assignee}
-                        {task.due && <> Â· {task.due}</>}
-                      </span>
-                    </div>
-                    <div className="mt-task-badges">
-                      <span className={`priority-badge priority-badge--${task.priority.toLowerCase()}`}>{task.priority}</span>
-                      <span className="task-tag">{task.tag}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+                    </button>
 
-            {/* Previous Meeting Tasks */}
-            <div className="meeting-section">
-              <h2 className="meeting-section-title">Tasks from Previous Meetings</h2>
-              <div className="meeting-tasks-list">
-                {PREVIOUS_TASKS.map((task) => (
-                  <div key={task.id} className="meeting-task-item prev-task-item">
-                    <span className={`mt-checkbox ${task.done ? 'mt-checkbox--done' : ''}`}>
-                      {task.done && (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                      )}
-                    </span>
-                    <div className="mt-task-info">
-                      <span className={`mt-task-title ${task.done ? 'mt-task-title--done' : ''}`}>{task.title}</span>
-                      <span className="mt-task-meta">
-                        <svg className="mt-meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-                        {task.assignee}
-                        {task.due && <> Â· {task.due}</>}
+                    <div className="meeting-task__status">
+                      <span className={`meeting-task__status-icon meeting-task__status-icon--${task.done ? 'done' : task.priority.toLowerCase()}`}>
+                        {task.done ? '✓' : task.priority === 'High' ? '!' : task.priority === 'Medium' ? '◌' : '○'}
                       </span>
                     </div>
-                    <div className="mt-task-badges">
-                      <span className={`priority-badge priority-badge--${task.priority.toLowerCase()}`}>{task.priority}</span>
-                      <span className="task-tag">{task.tag}</span>
+
+                    <div className="meeting-task__content">
+                      <strong>{task.title}</strong>
+                      <span>
+                        {task.assignee} <i>|</i> {task.due}
+                      </span>
                     </div>
-                    {/* Tooltip */}
-                    <div className="prev-task-tooltip">
-                      ðŸ“… {task.fromMeeting}
+
+                    <div className="meeting-task__meta">
+                      <span className={`meeting-priority meeting-priority--${task.priority.toLowerCase()}`}>
+                        {task.priority}
+                      </span>
+                      <span className="meeting-tag">{task.tag}</span>
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
+            </article>
           </div>
-        </div>
+        </section>
       </main>
 
-      {/* Meeting Summary Overlay */}
       {showSummary && (
-        <div className="modal-overlay" onClick={() => setShowSummary(false)}>
-          <div className="summary-modal" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setShowSummary(false)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
+        <div className="meeting-summary-modal__overlay">
+          <div className="meeting-summary-modal">
+            <button
+              type="button"
+              className="meeting-summary-modal__close"
+              onClick={() => setShowSummary(false)}
+              aria-label="Close summary"
+            >
+              ×
             </button>
 
-            <div className="summary-header">
-              <div className="summary-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="8" y1="8" x2="16" y2="8" /><line x1="8" y1="12" x2="16" y2="12" /><line x1="8" y1="16" x2="12" y2="16" />
-                </svg>
-              </div>
-              <h2>Meeting Summary</h2>
-              <p className="summary-subtitle">Planning Mingo Project</p>
-            </div>
-
-            <div className="summary-info-row">
-              <div className="summary-info-card">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
-                </svg>
-                <span>17.11.25, 10:00</span>
-              </div>
-              <div className="summary-info-card">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
-                </svg>
-                <span>Duration: 43 min</span>
+            <div className="meeting-summary__header">
+              <div>
+                <span className="meeting-summary__eyebrow">Meeting Summary</span>
+                <h2>📝 {meetingTitle}</h2>
               </div>
             </div>
 
-            {/* Participants */}
-            <div className="summary-section">
-              <h3 className="summary-section-title">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" />
-                </svg>
-                Participants ({ATTENDEES.length})
-              </h3>
-              <div className="summary-participants">
-                {ATTENDEES.map((name) => (
-                  <span key={name} className="participant-chip">{name}</span>
+            <div className="meeting-summary__facts">
+              <article className="meeting-summary__fact">
+                <strong>Date</strong>
+                <span>{meetingDate}</span>
+              </article>
+              <article className="meeting-summary__fact">
+                <strong>Duration</strong>
+                <span>{meetingDuration}</span>
+              </article>
+              <article className="meeting-summary__fact">
+                <strong>Repository</strong>
+                <span>{repositoryLabel}</span>
+              </article>
+              <article className="meeting-summary__fact">
+                <strong>Participants</strong>
+                <span>{attendees.length}</span>
+              </article>
+            </div>
+
+            <article className="meeting-summary__card">
+              <h3>✨ Summary</h3>
+              <p>{summaryNarrative}</p>
+            </article>
+
+            <article className="meeting-summary__card">
+              <h3>👥 Participants Who Attended</h3>
+              <div className="meeting-summary__participants">
+                {attendees.map((attendee) => (
+                  <span key={attendee.email || attendee.displayName}>
+                    {attendee.displayName}
+                  </span>
                 ))}
               </div>
-            </div>
+            </article>
 
-            {/* Written Summary */}
-            <div className="summary-section">
-              <h3 className="summary-section-title">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="8" y1="8" x2="16" y2="8" /><line x1="8" y1="12" x2="16" y2="12" /><line x1="8" y1="16" x2="12" y2="16" />
-                </svg>
-                Meeting Notes
-              </h3>
-              <div className="summary-notes">
-                <p>The team met to discuss the planning phase of the Mingo project. The meeting covered three main areas:</p>
-                <p><strong>1. Project Overview &amp; Description</strong> — Liron Dabach presented the project scope and core functionality. The team agreed that Mingo will serve as an AI-powered meeting management tool that integrates with Jira for task tracking. This task was completed during the meeting.</p>
-                <p><strong>2. UI/UX Design</strong> — The Figma design work was assigned to Liron Dabach with a deadline of 30.12.25. The design should include the dashboard, meeting page, and all modal components. The team reviewed initial wireframes and provided feedback.</p>
-                <p><strong>3. Architecture &amp; Technical Stack</strong> — Tal Gohar is leading the architecture planning. The team discussed using React + TypeScript for the frontend and Node.js for the backend, with MongoDB as the database. CI/CD pipeline setup (from previous sprint) was confirmed as completed by Sean Nedorez.</p>
-                <p>Previous items were also reviewed: API Documentation is still in progress (Liron), and the Database Schema Review was confirmed done by Tal.</p>
-                <p><strong>Next Steps:</strong> Complete Figma designs, finalize architecture document, and continue API documentation before the next meeting.</p>
-              </div>
-            </div>
-
-            {/* Completed Tasks */}
-            <div className="summary-section">
-              <h3 className="summary-section-title summary-section-title--green">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                Completed Tasks ({completedCurrent.length + completedPrevious.length})
-              </h3>
-              <div className="summary-task-list">
-                {completedCurrent.map((t) => (
-                  <div key={t.id} className="summary-task-row">
-                    <span className="summary-task-check done">&#10003;</span>
-                    <span className="summary-task-name">{t.title}</span>
-                    <span className="summary-task-assignee">{t.assignee}</span>
-                    <span className={`priority-badge priority-badge--${t.priority.toLowerCase()}`}>{t.priority}</span>
-                  </div>
-                ))}
-                {completedPrevious.map((t) => (
-                  <div key={t.id} className="summary-task-row">
-                    <span className="summary-task-check done">&#10003;</span>
-                    <span className="summary-task-name">{t.title} <small className="from-label">(prev)</small></span>
-                    <span className="summary-task-assignee">{t.assignee}</span>
-                    <span className={`priority-badge priority-badge--${t.priority.toLowerCase()}`}>{t.priority}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Remaining Tasks */}
-            <div className="summary-section">
-              <h3 className="summary-section-title summary-section-title--orange">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-                </svg>
-                Remaining Tasks ({remainingCurrent.length + remainingPrevious.length})
-              </h3>
-              <div className="summary-task-list">
-                {remainingCurrent.map((t) => (
-                  <div key={t.id} className="summary-task-row">
-                    <span className="summary-task-check pending">&#9675;</span>
-                    <span className="summary-task-name">{t.title}</span>
-                    <span className="summary-task-assignee">{t.assignee}</span>
-                    <span className={`priority-badge priority-badge--${t.priority.toLowerCase()}`}>{t.priority}</span>
-                    {t.due && <span className="summary-task-due">{t.due}</span>}
-                  </div>
-                ))}
-                {remainingPrevious.map((t) => (
-                  <div key={t.id} className="summary-task-row">
-                    <span className="summary-task-check pending">&#9675;</span>
-                    <span className="summary-task-name">{t.title} <small className="from-label">(prev)</small></span>
-                    <span className="summary-task-assignee">{t.assignee}</span>
-                    <span className={`priority-badge priority-badge--${t.priority.toLowerCase()}`}>{t.priority}</span>
-                    {t.due && <span className="summary-task-due">{t.due}</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="summary-actions">
-              <button className={`summary-email-btn ${emailSent ? 'summary-email-btn--sent' : ''}`} onClick={handleSendEmail} disabled={emailSent}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="2" y="4" width="20" height="16" rx="2" /><polyline points="22 7 12 13 2 7" />
-                </svg>
-                {emailSent ? 'Summary Sent!' : 'Send Summary via Email'}
-              </button>
-              <button className="summary-close-btn" onClick={() => setShowSummary(false)}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Create Task Modal */}
-      {showCreateTask && (
-        <div className="modal-overlay" onClick={() => setShowCreateTask(false)}>
-          <div className="create-task-modal" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setShowCreateTask(false)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-            <h2 className="create-task-title">New Task</h2>
-            <form onSubmit={handleCreateTask} className="create-task-form">
-              <div className="ct-field">
-                <label>Title <span className="required">*</span></label>
-                <input type="text" placeholder="ex: Design review" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} required />
-              </div>
-              <div className="ct-field">
-                <label>Assign to</label>
-                <select value={newAssignee} onChange={(e) => setNewAssignee(e.target.value)}>
-                  {ATTENDEES.map((a) => (
-                    <option key={a} value={a}>{a}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="ct-row">
-                <div className="ct-field">
-                  <label>Priority</label>
-                  <select value={newPriority} onChange={(e) => setNewPriority(e.target.value as 'High' | 'Medium' | 'Low')}>
-                    <option value="High">High</option>
-                    <option value="Medium">Medium</option>
-                    <option value="Low">Low</option>
-                  </select>
+            <div className="meeting-summary__tasks">
+              <article className="meeting-summary__card">
+                <h3>✅ Closed Tasks</h3>
+                <div className="meeting-summary__task-list">
+                  {completedTasks.length > 0 ? (
+                    completedTasks.map((task) => (
+                      <div key={task.id} className="meeting-summary__task-row">
+                        <strong>{task.title}</strong>
+                        <span>{task.assignee}</span>
+                        <em>{task.tag}</em>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="meeting-summary__empty">No tasks were closed in this meeting.</p>
+                  )}
                 </div>
-                <div className="ct-field">
-                  <label>Due date</label>
-                  <input type="date" value={newDue} onChange={(e) => setNewDue(e.target.value)} />
+              </article>
+
+              <article className="meeting-summary__card">
+                <h3>🕒 Remaining Tasks</h3>
+                <div className="meeting-summary__task-list">
+                  {openTasks.length > 0 ? (
+                    openTasks.map((task) => (
+                      <div key={task.id} className="meeting-summary__task-row">
+                        <strong>{task.title}</strong>
+                        <span>{task.assignee}</span>
+                        <em>{task.due}</em>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="meeting-summary__empty">No open tasks remained after the meeting.</p>
+                  )}
                 </div>
-              </div>
-              <button type="submit" className="ct-submit-btn">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-                Create Task
+              </article>
+            </div>
+
+            <div className="meeting-summary-modal__actions">
+              <button
+                type="button"
+                className={`meeting-summary-modal__mail ${emailSent ? 'meeting-summary-modal__mail--sent' : ''}`}
+                onClick={handleSendSummaryEmail}
+                disabled={emailSent}
+              >
+                {emailSent ? 'Summary Sent' : 'Send by Email'}
               </button>
-            </form>
+              <button
+                type="button"
+                className="meeting-summary-modal__home"
+                onClick={() => navigate('/dashboard')}
+              >
+                Back to Home
+              </button>
+            </div>
           </div>
         </div>
       )}

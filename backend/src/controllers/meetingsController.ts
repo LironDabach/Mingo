@@ -197,6 +197,19 @@ class meetingsController extends baseController {
       return;
     }
 
+    if (
+      typeof req.body.gitHubRepoName !== "string" ||
+      !req.body.gitHubRepoName.trim()
+    ) {
+      res.status(400).json({ error: "GitHub repository is required" });
+      return;
+    }
+
+    if (attendeeEmails.length === 0 && participantIds.length === 0) {
+      res.status(400).json({ error: "At least one attendee is required" });
+      return;
+    }
+
     try {
       const users = attendeeEmails.length
         ? await usersModel.find(

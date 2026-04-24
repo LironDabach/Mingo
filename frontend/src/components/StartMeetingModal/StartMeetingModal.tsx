@@ -33,6 +33,7 @@ const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
   const navigate = useNavigate();
   const currentUser = getStoredUser();
+  const hasActiveMeeting = Boolean(localStorage.getItem('currentMeetingId'));
   const [emailInput, setEmailInput] = useState('');
   const [attendees, setAttendees] = useState<AttendeeEntry[]>([]);
   const [repository, setRepository] = useState('');
@@ -152,6 +153,21 @@ const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
       return;
     }
 
+    if (hasActiveMeeting) {
+      setError('A live meeting is already active. Return to it before creating another one.');
+      return;
+    }
+
+    if (!repository.trim()) {
+      setError('Please choose a GitHub repository before creating the meeting.');
+      return;
+    }
+
+    if (attendees.length === 0) {
+      setError('Please add at least one attendee before creating the meeting.');
+      return;
+    }
+
     setIsSubmitting(true);
     setError('');
 
@@ -173,6 +189,16 @@ const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
 
       const meeting = await response.json();
       localStorage.setItem('currentMeetingId', meeting._id);
+      localStorage.setItem(
+        'currentMeetingDraft',
+        JSON.stringify({
+          id: meeting._id,
+          title: meeting.title,
+          date: meeting.date,
+          gitHubRepoName: repository.trim(),
+          attendees,
+        }),
+      );
       onClose();
       navigate('/meetings/live');
     } catch (err) {
@@ -264,7 +290,12 @@ const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
 
         {error && <p className="start-meeting-error">{error}</p>}
 
-        <button className="modal-create-btn" type="button" onClick={handleCreateMeeting} disabled={isSubmitting}>
+        <button
+          className="modal-create-btn"
+          type="button"
+          onClick={handleCreateMeeting}
+          disabled={isSubmitting || !repository.trim() || attendees.length === 0}
+        >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
