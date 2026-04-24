@@ -19,7 +19,6 @@ type AuthProviderProfile = {
   providerId: string;
   email: string;
   fullname?: string;
-  profilePicture?: string | null;
 };
 
 const getRegisterDuplicateMessage = (field?: string) => {
@@ -33,6 +32,12 @@ const getRegisterDuplicateMessage = (field?: string) => {
   }
 };
 
+type GitHubTokenDetails = {
+  accessToken: string;
+  tokenType?: string | undefined;
+  scope?: string | undefined;
+};
+
 const buildAuthResponse = (user: any, tokens: GeneratedTokens) => ({
   ...tokens,
   user: {
@@ -40,7 +45,6 @@ const buildAuthResponse = (user: any, tokens: GeneratedTokens) => ({
     username: user.username,
     fullname: user.fullname,
     email: user.email,
-    profilePicture: user.profilePicture,
   },
 });
 
@@ -93,12 +97,23 @@ const applyProfileData = (user: any, profile: AuthProviderProfile, shouldOverwri
   if (!user.fullname && profile.fullname) {
     user.fullname = profile.fullname;
   }
-  if (profile.profilePicture) {
-    user.profilePicture = profile.profilePicture;
-  }
 };
 
-const findOrCreateOAuthUser = async (profile: AuthProviderProfile, req: Request) => {
+const saveGitHubTokenData = (user: any, tokenDetails?: GitHubTokenDetails) => {
+  if (!tokenDetails?.accessToken) {
+    return;
+  }
+
+  user.githubAccessToken = tokenDetails.accessToken;
+  user.githubTokenType = tokenDetails.tokenType || "bearer";
+  user.githubTokenScope = tokenDetails.scope || "";
+};
+
+const findOrCreateOAuthUser = async (
+  profile: AuthProviderProfile,
+  req: Request,
+  providerTokens?: GitHubTokenDetails,
+) => {
   const authenticatedUserId = getAuthenticatedUserId(req);
   const providerLookup =
     profile.provider === "github"
@@ -123,39 +138,21 @@ const findOrCreateOAuthUser = async (profile: AuthProviderProfile, req: Request)
       };
     }
 
-    if (
-      profile.provider === "github" &&
-      authenticatedUser.googleId &&
-      authenticatedUser.email !== profile.email
-    ) {
-      return {
-        error: {
-          code: 409,
-          message: "GitHub account email does not match the signed-in user",
-        },
-      };
+    // When a signed-in user links an OAuth provider, keep the app's primary
+    // email as-is so Google/GitHub can belong to a different address.
+    applyProfileData(authenticatedUser, profile, false);
+    if (profile.provider === "github") {
+      saveGitHubTokenData(authenticatedUser, providerTokens);
     }
-
-    if (
-      profile.provider === "google" &&
-      authenticatedUser.githubId &&
-      authenticatedUser.email !== profile.email
-    ) {
-      return {
-        error: {
-          code: 409,
-          message: "Google account email does not match the signed-in user",
-        },
-      };
-    }
-
-    applyProfileData(authenticatedUser, profile);
     await authenticatedUser.save();
     return { user: authenticatedUser };
   }
 
   if (providerOwner) {
     applyProfileData(providerOwner, profile);
+    if (profile.provider === "github") {
+      saveGitHubTokenData(providerOwner, providerTokens);
+    }
     await providerOwner.save();
     return { user: providerOwner };
   }
@@ -163,6 +160,9 @@ const findOrCreateOAuthUser = async (profile: AuthProviderProfile, req: Request)
   let user = await User.findOne({ email: profile.email });
   if (user) {
     applyProfileData(user, profile);
+    if (profile.provider === "github") {
+      saveGitHubTokenData(user, providerTokens);
+    }
     await user.save();
     return { user };
   }
@@ -176,8 +176,10 @@ const findOrCreateOAuthUser = async (profile: AuthProviderProfile, req: Request)
       ? { githubId: profile.providerId }
       : { googleId: profile.providerId }),
   };
-  if (profile.profilePicture) {
-    createPayload.profilePicture = profile.profilePicture;
+  if (profile.provider === "github" && providerTokens?.accessToken) {
+    createPayload.githubAccessToken = providerTokens.accessToken;
+    createPayload.githubTokenType = providerTokens.tokenType || "bearer";
+    createPayload.githubTokenScope = providerTokens.scope || "";
   }
 
   user = await User.create(createPayload);
@@ -476,9 +478,16 @@ const gitHubLogin = async (req: Request, res: Response) => {
         providerId: githubUser.id.toString(),
         email,
         fullname: githubUser.name?.trim() || githubUser.login,
-        profilePicture: githubUser.avatar_url || null,
       },
       req,
+      {
+        accessToken: githubToken,
+        tokenType: tokenData.token_type,
+        scope:
+          typeof (tokenData as { scope?: string }).scope === "string"
+            ? (tokenData as { scope?: string }).scope
+            : "",
+      },
     );
 
     if (result.error) {
@@ -529,9 +538,19 @@ const disconnectOAuthProvider = async (
       );
     }
 
-    await User.findByIdAndUpdate(authenticatedUserId, {
-      $unset: { [fieldToUnset]: 1 },
-    });
+    await User.findByIdAndUpdate(
+      authenticatedUserId,
+      provider === "github"
+        ? {
+            $unset: {
+              [fieldToUnset]: 1,
+              githubAccessToken: 1,
+              githubTokenType: 1,
+              githubTokenScope: 1,
+            },
+          }
+        : { $unset: { [fieldToUnset]: 1 } },
+    );
 
     return res.status(200).json({
       message: `${provider === "github" ? "GitHub" : "Google"} account disconnected successfully`,
@@ -603,7 +622,6 @@ const googleLogin = async (req: Request, res: Response) => {
         providerId: profile.sub,
         email: profile.email,
         fullname: profile.name || profile.email,
-        profilePicture: profile.picture || null,
       },
       req,
     );
@@ -639,6 +657,74 @@ const getOAuthConfig = (_req: Request, res: Response) => {
   });
 };
 
+const getGitHubRepositories = async (req: Request, res: Response) => {
+  const authenticatedUserId = getAuthenticatedUserId(req);
+
+  if (!authenticatedUserId) {
+    return sendError(
+      401,
+      "Unauthorized: missing or invalid Authorization header",
+      res,
+    );
+  }
+
+  try {
+    const user = await User.findById(authenticatedUserId);
+
+    if (!user?.githubAccessToken) {
+      return sendError(
+        400,
+        "GitHub is not synced yet. Connect it from settings when available.",
+        res,
+      );
+    }
+
+    const tokenType =
+      typeof user.githubTokenType === "string" &&
+      user.githubTokenType.trim().toLowerCase() === "bearer"
+        ? "Bearer"
+        : "token";
+
+    const response = await fetch("https://api.github.com/user/repos?sort=updated&per_page=100", {
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `${tokenType} ${user.githubAccessToken}`,
+        "User-Agent": "Mingo",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return sendError(
+        response.status === 401 ? 401 : 502,
+        errorText || "Failed to load GitHub repositories",
+        res,
+      );
+    }
+
+    const repos = (await response.json()) as Array<{
+      id: number;
+      name: string;
+      full_name: string;
+      private?: boolean;
+      owner?: { login?: string };
+    }>;
+
+    return res.status(200).json(
+      repos.map((repo) => ({
+        id: repo.id,
+        name: repo.name,
+        fullName: repo.full_name,
+        owner: repo.owner?.login || "",
+        private: Boolean(repo.private),
+      })),
+    );
+  } catch (_err) {
+    return sendError(500, "Failed to load GitHub repositories", res);
+  }
+};
+
 export default {
   register,
   login,
@@ -649,4 +735,5 @@ export default {
   disconnectGoogle,
   disconnectGitHub,
   getOAuthConfig,
+  getGitHubRepositories,
 };

@@ -22,12 +22,6 @@ const userSchema = new mongoose.Schema({
     required: true,
     unique: true,
   },
-
-  profilePicture: {
-    type: String,
-    required: false,
-  },
-
   email: {
     type: String,
     required: true,
@@ -39,6 +33,18 @@ const userSchema = new mongoose.Schema({
     required: false,
     unique: true,
     sparse: true,
+  },
+  githubAccessToken: {
+    type: String,
+    required: false,
+  },
+  githubTokenType: {
+    type: String,
+    required: false,
+  },
+  githubTokenScope: {
+    type: String,
+    required: false,
   },
   googleId: {
     type: String,

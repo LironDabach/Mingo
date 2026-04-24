@@ -22,14 +22,25 @@ const meetingSchema = new mongoose.Schema({
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: "user",
-      required: true,
     },
   ],
   transcriptId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "transcript",
-    required: true,
+    required: false,
   },
+  gitHubRepoName: {
+    type: String,
+    required: false,
+    trim: true,
+  },
+  inviteEmails: [
+    {
+      type: String,
+      trim: true,
+      lowercase: true,
+    },
+  ],
   topics: [
     {
       type: String,

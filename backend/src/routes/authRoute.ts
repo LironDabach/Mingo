@@ -281,4 +281,10 @@ router.post(
   authController.disconnectGitHub,
 );
 
+router.get(
+  "/github/repos",
+  authenticate,
+  authController.getGitHubRepositories,
+);
+
 export default router;

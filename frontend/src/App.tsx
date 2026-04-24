@@ -9,6 +9,7 @@ import MeetingPage from "./pages/MeetingPage";
 import TasksPage from "./pages/TasksPage";
 import HistoryPage from "./pages/HistoryPage";
 import GitHubCallbackPage from "./pages/GitHubCallbackPage";
+import SettingsPage from "./pages/SettingsPage";
 
 // Main app router — wraps protected routes with auth check
 function App() {
@@ -65,6 +66,14 @@ function App() {
         element={
           <RequireAuth>
             <HistoryPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <RequireAuth>
+            <SettingsPage />
           </RequireAuth>
         }
       />
