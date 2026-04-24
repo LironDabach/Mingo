@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header/Header';
 import StartMeetingModal from '../components/StartMeetingModal/StartMeetingModal';
 import NewFutureMeetingModal from '../components/NewFutureMeetingModal/NewFutureMeetingModal';
@@ -27,9 +28,24 @@ const recentMeetings = [
 ];
 
 const DashboardPage = () => {
+  const navigate = useNavigate();
   const [showStartMeeting, setShowStartMeeting] = useState(false);
   const [showNewFutureMeeting, setShowNewFutureMeeting] = useState(false);
   const [showUploadMeeting, setShowUploadMeeting] = useState(false);
+  const [hasActiveMeeting, setHasActiveMeeting] = useState(
+    Boolean(localStorage.getItem('currentMeetingId')),
+  );
+
+  useEffect(() => {
+    const syncMeetingState = () => {
+      setHasActiveMeeting(Boolean(localStorage.getItem('currentMeetingId')));
+    };
+
+    syncMeetingState();
+    window.addEventListener('storage', syncMeetingState);
+
+    return () => window.removeEventListener('storage', syncMeetingState);
+  }, []);
 
   return (
     <div className="dashboard-layout">
@@ -40,14 +56,37 @@ const DashboardPage = () => {
 
         {/* Action Cards */}
         <div className="dashboard-actions">
-          <div className="action-card action-card--blue" onClick={() => setShowStartMeeting(true)}>
+          <div
+            className={`action-card action-card--blue ${hasActiveMeeting ? 'action-card--disabled' : ''}`}
+            onClick={() => {
+              if (!hasActiveMeeting) {
+                setShowStartMeeting(true);
+              }
+            }}
+          >
             <div className="action-card-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
               </svg>
             </div>
             <h3>Start Live Meeting</h3>
-            <p>Launch real-time AI assistant</p>
+            <p>
+              {hasActiveMeeting
+                ? 'A live meeting is already running. Return to it before starting another one.'
+                : 'Launch real-time AI assistant'}
+            </p>
+            {hasActiveMeeting && (
+              <button
+                type="button"
+                className="action-card-inline-btn"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  navigate('/meetings/live');
+                }}
+              >
+                Go to Live Meeting
+              </button>
+            )}
           </div>
           <div className="action-card action-card--orange" onClick={() => setShowNewFutureMeeting(true)}>
             <div className="action-card-icon">
@@ -82,16 +121,6 @@ const DashboardPage = () => {
             </div>
             <span className="stat-number">24</span>
             <span className="stat-label">Meetings this month</span>
-          </div>
-          <div className="stat-card">
-            <div className="stat-icon stat-icon--green">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 11l3 3L22 4" />
-                <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
-              </svg>
-            </div>
-            <span className="stat-number">13</span>
-            <span className="stat-label">Action items tracked</span>
           </div>
           <div className="stat-card">
             <div className="stat-icon stat-icon--yellow">

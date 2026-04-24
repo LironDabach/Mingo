@@ -737,3 +737,4 @@ export default {
   getOAuthConfig,
   getGitHubRepositories,
 };
+

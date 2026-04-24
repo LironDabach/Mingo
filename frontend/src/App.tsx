@@ -10,6 +10,7 @@ import TasksPage from "./pages/TasksPage";
 import HistoryPage from "./pages/HistoryPage";
 import GitHubCallbackPage from "./pages/GitHubCallbackPage";
 import SettingsPage from "./pages/SettingsPage";
+import LiveMeetingDock from "./components/LiveMeetingDock/LiveMeetingDock";
 
 // Main app router — wraps protected routes with auth check
 function App() {
@@ -24,60 +25,71 @@ function App() {
   };
 
   return (
-    <Routes>
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
-      <Route path="/auth/github/callback" element={<GitHubCallbackPage />} />
-      <Route
-        path="/dashboard"
-        element={
-          <RequireAuth>
-            <DashboardPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/transcribe"
-        element={
-          <RequireAuth>
-            <TranscribePage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/meeting"
-        element={
-          <RequireAuth>
-            <MeetingPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/tasks"
-        element={
-          <RequireAuth>
-            <TasksPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/history"
-        element={
-          <RequireAuth>
-            <HistoryPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/settings"
-        element={
-          <RequireAuth>
-            <SettingsPage />
-          </RequireAuth>
-        }
-      />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/auth/github/callback" element={<GitHubCallbackPage />} />
+        <Route
+          path="/dashboard"
+          element={
+            <RequireAuth>
+              <DashboardPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/transcribe"
+          element={
+            <RequireAuth>
+              <TranscribePage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/meeting"
+          element={
+            <RequireAuth>
+              <MeetingPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/meetings/live"
+          element={
+            <RequireAuth>
+              <MeetingPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/tasks"
+          element={
+            <RequireAuth>
+              <TasksPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/history"
+          element={
+            <RequireAuth>
+              <HistoryPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <RequireAuth>
+              <SettingsPage />
+            </RequireAuth>
+          }
+        />
+      </Routes>
+      {localStorage.getItem("token") ? <LiveMeetingDock /> : null}
+    </>
   );
 }
 

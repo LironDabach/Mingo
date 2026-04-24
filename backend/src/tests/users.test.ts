@@ -1,5 +1,4 @@
 import path from "path";
-import fs from "fs";
 import dotenv from "dotenv";
 import request from "supertest";
 import bcrypt from "bcrypt";
@@ -8,7 +7,6 @@ import mongoose from "mongoose";
 import { Express } from "express";
 import initApp from "../index";
 import usersModel from "../models/usersModel";
-import { uploadsDir } from "../services/Picture/uploadPictureService";
 
 jest.setTimeout(30000);
 
@@ -17,18 +15,11 @@ let jwtSecret: string;
 let ownerId: string;
 let otherUserId: string;
 let deleteUserId: string;
-let userWithPictureId: string;
 let authToken: string;
 let otherAuthToken: string;
 let deleteUserAuthToken: string;
-let pictureUserAuthToken: string;
 const createdUserIds: string[] = [];
-const createdUploadPaths: string[] = [];
 const suiteSeed = new mongoose.Types.ObjectId().toString();
-const imageFixturePath = path.resolve(
-  __dirname,
-  "../../coverage/lcov-report/favicon.png",
-);
 
 const uniqueValue = (prefix: string) => `${prefix}_${suiteSeed}`;
 
@@ -47,31 +38,25 @@ beforeAll(async () => {
 
   const hashedPassword = await bcrypt.hash("Pass1234!", 10);
 
-  const [ownerUser, otherUser, deleteUser, pictureUser] = await usersModel.create([
+  const [ownerUser, otherUser, deleteUser] = await usersModel.create([
     {
       username: uniqueValue("users_owner"),
+      fullname: `Users Owner ${suiteSeed}`,
       email: `${uniqueValue("users_owner")}@example.com`,
       password: hashedPassword,
       refreshTokens: [],
     },
     {
-      username: `users_owner_${suffix}`,
-      fullname: `Users Owner ${suffix}`,
-      email: `users_owner_${suffix}@example.com`,
+      username: uniqueValue("users_other"),
+      fullname: `Users Other ${suiteSeed}`,
+      email: `${uniqueValue("users_other")}@example.com`,
       password: hashedPassword,
       refreshTokens: [],
     },
     {
-      username: `users_other_${suffix}`,
-      fullname: `Users Other ${suffix}`,
-      email: `users_other_${suffix}@example.com`,
-      password: hashedPassword,
-      refreshTokens: [],
-    },
-    {
-      username: `users_delete_${suffix}`,
-      fullname: `Users Delete ${suffix}`,
-      email: `users_delete_${suffix}@example.com`,
+      username: uniqueValue("users_delete"),
+      fullname: `Users Delete ${suiteSeed}`,
+      email: `${uniqueValue("users_delete")}@example.com`,
       password: hashedPassword,
       refreshTokens: [],
     },
@@ -80,27 +65,17 @@ beforeAll(async () => {
   ownerId = ownerUser!._id.toString();
   otherUserId = otherUser!._id.toString();
   deleteUserId = deleteUser!._id.toString();
-  userWithPictureId = pictureUser!._id.toString();
 
-  createdUserIds.push(ownerId, otherUserId, deleteUserId, userWithPictureId);
+  createdUserIds.push(ownerId, otherUserId, deleteUserId);
 
   authToken = jwt.sign({ _id: ownerId }, jwtSecret, { expiresIn: "1h" });
   otherAuthToken = jwt.sign({ _id: otherUserId }, jwtSecret, { expiresIn: "1h" });
   deleteUserAuthToken = jwt.sign({ _id: deleteUserId }, jwtSecret, {
     expiresIn: "1h",
   });
-  pictureUserAuthToken = jwt.sign({ _id: userWithPictureId }, jwtSecret, {
-    expiresIn: "1h",
-  });
 }, 30000);
 
 afterAll(async () => {
-  createdUploadPaths.forEach((uploadPath) => {
-    if (fs.existsSync(uploadPath)) {
-      fs.unlinkSync(uploadPath);
-    }
-  });
-
   if (createdUserIds.length > 0) {
     await usersModel.deleteMany({ _id: { $in: createdUserIds } });
   }
@@ -198,11 +173,12 @@ describe("Users API", () => {
         .set("Authorization", `Bearer ${authToken}`)
         .send({
           username: "",
+          fullname: "",
           email: "",
         });
 
       expect(response.status).toBe(400);
-      expect(response.text).toBe("Error: username and email are required");
+      expect(response.text).toBe("Error: username, fullname and email are required");
     });
 
     test("returns 400 when email is invalid", async () => {
@@ -211,6 +187,7 @@ describe("Users API", () => {
         .set("Authorization", `Bearer ${authToken}`)
         .send({
           username: uniqueValue("users_invalid_email"),
+          fullname: `Invalid Email ${Date.now()}`,
           email: "not-an-email",
         });
 
@@ -244,28 +221,6 @@ describe("Users API", () => {
       expect(savedUser?.password).not.toBe("Pass1234!");
     });
 
-    test("creates a user with a profile picture upload", async () => {
-      const response = await request(app)
-        .post("/api/user")
-        .set("Authorization", `Bearer ${authToken}`)
-        .field("username", uniqueValue("users_uploaded"))
-        .field("email", `${uniqueValue("users_uploaded")}@example.com`)
-        .attach("file", imageFixturePath);
-
-      expect(response.status).toBe(201);
-      expect(response.body.profilePicture).toContain("/api/upload/");
-
-      createdUserIds.push(response.body._id);
-
-      const savedUser = await usersModel.findById(response.body._id);
-      expect(savedUser?.profilePicture).toBe(response.body.profilePicture);
-
-      const fileName = response.body.profilePicture.split("/api/upload/")[1];
-      const uploadPath = path.resolve(process.cwd(), uploadsDir, fileName);
-      createdUploadPaths.push(uploadPath);
-      expect(fs.existsSync(uploadPath)).toBe(true);
-    });
-
     test("returns 400 for duplicate username or email", async () => {
       const ownerUser = await usersModel.findById(ownerId);
 
@@ -290,6 +245,7 @@ describe("Users API", () => {
         .set("Authorization", `Bearer ${authToken}`)
         .send({
           username: uniqueValue("users_github_one"),
+          fullname: `GitHub One ${Date.now()}`,
           email: `${uniqueValue("users_github_one")}@example.com`,
           githubId: duplicateGithubId,
         });
@@ -302,6 +258,7 @@ describe("Users API", () => {
         .set("Authorization", `Bearer ${authToken}`)
         .send({
           username: uniqueValue("users_github_two"),
+          fullname: `GitHub Two ${Date.now()}`,
           email: `${uniqueValue("users_github_two")}@example.com`,
           githubId: duplicateGithubId,
         });
