@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header/Header';
-import { getStoredUser } from '../lib/auth';
+import { fetchWithAuth, getStoredUser } from '../lib/auth';
 import './MeetingPage.css';
 
 type DraftAttendee = {
@@ -149,6 +149,9 @@ const MeetingPage = () => {
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
   const [chatInput, setChatInput] = useState('');
   const [showSummary, setShowSummary] = useState(false);
+  const [summaryText, setSummaryText] = useState('');
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState('');
   const [emailSent, setEmailSent] = useState(false);
   const [tasks, setTasks] = useState<Task[]>(DEFAULT_TASKS);
 
@@ -181,11 +184,57 @@ const MeetingPage = () => {
     setChatInput('');
   };
 
-  const handleEndMeeting = () => {
+  const handleEndMeeting = async () => {
+    const meetingId = parsedDraft?.id || localStorage.getItem('currentMeetingId');
+    const fallbackSummary = summaryNarrative;
+
     setShowSummary(true);
     setEmailSent(false);
-    localStorage.removeItem('currentMeetingDraft');
-    localStorage.removeItem('currentMeetingId');
+    setSummaryText(fallbackSummary);
+    setSummaryError('');
+
+    if (!meetingId) {
+      localStorage.removeItem('currentMeetingDraft');
+      localStorage.removeItem('currentMeetingId');
+      return;
+    }
+
+    try {
+      setSummaryLoading(true);
+      const summaryResponse = await fetchWithAuth(`/api/meetings/${meetingId}/mingoAgent/generateSummary`);
+      let generatedSummary = fallbackSummary;
+
+      if (summaryResponse.ok) {
+        const data = (await summaryResponse.json()) as { summary?: string };
+        generatedSummary = data.summary || fallbackSummary;
+        setSummaryText(generatedSummary);
+      } else {
+        setSummaryError('The meeting ended, but the server summary could not be generated right now.');
+      }
+
+      const startedAt = parsedDraft?.date ? new Date(parsedDraft.date).getTime() : Date.now();
+      const duration = Math.max(1, Math.round((Date.now() - startedAt) / 60000));
+
+      await fetchWithAuth(`/api/meetings/meetings/${meetingId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          status: 'completed',
+          duration,
+          summary: generatedSummary,
+          endedAt: new Date().toISOString(),
+        }),
+      });
+    } catch (err) {
+      setSummaryError(
+        err instanceof Error
+          ? err.message
+          : 'The meeting ended, but the server summary could not be saved right now.',
+      );
+    } finally {
+      setSummaryLoading(false);
+      localStorage.removeItem('currentMeetingDraft');
+      localStorage.removeItem('currentMeetingId');
+    }
   };
 
   const handleSendSummaryEmail = () => {
@@ -262,7 +311,7 @@ const MeetingPage = () => {
                 <rect x="6" y="5" width="4" height="14" rx="1" />
                 <rect x="14" y="5" width="4" height="14" rx="1" />
               </svg>
-              End Meeting
+              {summaryLoading ? 'Ending...' : 'End Meeting'}
             </button>
           </div>
         </section>
@@ -433,7 +482,13 @@ const MeetingPage = () => {
 
             <article className="meeting-summary__card">
               <h3>✨ Summary</h3>
-              <p>{summaryNarrative}</p>
+              {summaryLoading ? (
+                <p>Generating summary...</p>
+              ) : summaryError ? (
+                <p>{summaryError}</p>
+              ) : (
+                <p>{summaryText || summaryNarrative}</p>
+              )}
             </article>
 
             <article className="meeting-summary__card">

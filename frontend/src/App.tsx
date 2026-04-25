@@ -72,13 +72,14 @@ function App() {
           }
         />
         <Route
-          path="/history"
+          path="/meetings"
           element={
             <RequireAuth>
               <HistoryPage />
             </RequireAuth>
           }
         />
+        <Route path="/history" element={<Navigate to="/meetings" replace />} />
         <Route
           path="/settings"
           element={

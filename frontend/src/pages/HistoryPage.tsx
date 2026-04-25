@@ -1,106 +1,291 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Header from '../components/Header/Header';
+import { fetchWithAuth, getStoredUser, parseResponseBody } from '../lib/auth';
+import './MeetingPage.css';
 import './HistoryPage.css';
-
-interface Meeting {
-  id: number;
-  title: string;
-  date: string;
-  time: string;
-  participants: number;
-  duration: string;
-  status: 'Completed' | 'Upcoming';
-  tasksCount: number;
-}
-
-const MOCK_MEETINGS: Meeting[] = [
-  { id: 1,  title: 'Q1 Strategy Review',       date: '17.11.25', time: '14:00', participants: 5,  duration: '43 min', status: 'Completed', tasksCount: 4 },
-  { id: 2,  title: 'Code Review',              date: '17.11.25', time: '15:00', participants: 2,  duration: '28 min', status: 'Completed', tasksCount: 2 },
-  { id: 3,  title: 'Q2 Strategy Review',       date: '01.01.26', time: '09:00', participants: 10, duration: '—',      status: 'Upcoming',  tasksCount: 0 },
-  { id: 4,  title: 'Q3 Strategy Review',       date: '01.04.26', time: '09:00', participants: 8,  duration: '—',      status: 'Upcoming',  tasksCount: 0 },
-  { id: 5,  title: 'Sprint 4 Kickoff',         date: '10.11.25', time: '10:00', participants: 4,  duration: '55 min', status: 'Completed', tasksCount: 3 },
-  { id: 6,  title: 'Architecture Review',      date: '05.11.25', time: '11:00', participants: 3,  duration: '40 min', status: 'Completed', tasksCount: 5 },
-  { id: 7,  title: 'Planning Mingo Project',   date: '17.11.25', time: '10:00', participants: 4,  duration: '43 min', status: 'Completed', tasksCount: 3 },
-  { id: 8,  title: 'Design Review',            date: '12.11.25', time: '14:00', participants: 6,  duration: '35 min', status: 'Completed', tasksCount: 2 },
-  { id: 9,  title: 'Backend Sync',             date: '15.11.25', time: '09:30', participants: 3,  duration: '20 min', status: 'Completed', tasksCount: 1 },
-  { id: 10, title: 'Q4 Planning',              date: '15.06.26', time: '10:00', participants: 12, duration: '—',      status: 'Upcoming',  tasksCount: 0 },
-  { id: 11, title: 'Stakeholder Demo',         date: '20.12.25', time: '16:00', participants: 15, duration: '—',      status: 'Upcoming',  tasksCount: 0 },
-  { id: 12, title: 'Team Retrospective',       date: '18.11.25', time: '11:00', participants: 4,  duration: '30 min', status: 'Completed', tasksCount: 2 },
-];
 
 type FilterTab = 'All' | 'Last Week' | 'Last Month' | 'Upcoming';
 
-// Parse dd.mm.yy to Date
-const parseDate = (d: string): Date => {
-  const [day, month, year] = d.split('.').map(Number);
-  return new Date(2000 + year, month - 1, day);
+type RawMeeting = {
+  _id: string;
+  title: string;
+  date: string;
+  duration?: number;
+  status?: 'upcoming' | 'live' | 'completed';
+  summary?: string;
+  gitHubRepoName?: string;
+  participants?: unknown[];
+  inviteEmails?: string[];
+  tasks?: unknown[];
+};
+
+type RawParticipant = {
+  _id?: string;
+  fullname?: string;
+  username?: string;
+  email?: string;
+};
+
+type Meeting = {
+  id: string;
+  title: string;
+  date: Date;
+  dateLabel: string;
+  timeLabel: string;
+  participants: number;
+  participantLabels: string[];
+  duration: string;
+  status: 'Completed' | 'Upcoming' | 'Live';
+  tasksCount: number;
+  summary: string;
+  repository: string;
+};
+
+const tabs: FilterTab[] = ['All', 'Last Week', 'Last Month', 'Upcoming'];
+
+const formatDuration = (duration?: number) => {
+  if (typeof duration !== 'number' || Number.isNaN(duration)) {
+    return '-';
+  }
+
+  return `${Math.max(1, Math.round(duration))} min`;
+};
+
+const formatMeetingDate = (date: Date) =>
+  new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+  }).format(date);
+
+const formatMeetingTime = (date: Date) =>
+  new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+
+const isParticipantRecord = (value: unknown): value is RawParticipant =>
+  Boolean(value) && typeof value === 'object';
+
+const getParticipantLabel = (participant: unknown) => {
+  if (typeof participant === 'string') {
+    return participant;
+  }
+
+  if (!isParticipantRecord(participant)) {
+    return '';
+  }
+
+  return participant.fullname || participant.username || participant.email || participant._id || '';
+};
+
+const normalizeMeeting = (meeting: RawMeeting): Meeting => {
+  const meetingDate = new Date(meeting.date);
+  const safeDate = Number.isNaN(meetingDate.getTime()) ? new Date() : meetingDate;
+  const hasDuration = typeof meeting.duration === 'number';
+  const isLive = meeting.status === 'live';
+  const isCompleted =
+    meeting.status === 'completed' ||
+    hasDuration ||
+    (!meeting.status && safeDate.getTime() < Date.now());
+  const participantLabels = [
+    ...(Array.isArray(meeting.participants)
+      ? meeting.participants.map(getParticipantLabel)
+      : []),
+    ...(Array.isArray(meeting.inviteEmails) ? meeting.inviteEmails : []),
+  ].filter((label, index, array) => Boolean(label) && array.indexOf(label) === index);
+
+  return {
+    id: meeting._id,
+    title: meeting.title || 'Untitled Meeting',
+    date: safeDate,
+    dateLabel: formatMeetingDate(safeDate),
+    timeLabel: formatMeetingTime(safeDate),
+    participants: participantLabels.length,
+    participantLabels,
+    duration: formatDuration(meeting.duration),
+    status: isLive ? 'Live' : isCompleted ? 'Completed' : 'Upcoming',
+    tasksCount: Array.isArray(meeting.tasks) ? meeting.tasks.length : 0,
+    summary: meeting.summary || '',
+    repository: meeting.gitHubRepoName || '-',
+  };
 };
 
 const HistoryPage = () => {
+  const currentUser = getStoredUser();
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<FilterTab>('All');
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
+  const [isSummaryLoading, setIsSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState('');
+  const [isCreatingDemo, setIsCreatingDemo] = useState(false);
 
-  const now = new Date();
-  const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  useEffect(() => {
+    const loadMeetings = async () => {
+      if (!currentUser?._id) {
+        setError('Unable to load your meetings. Please sign in again.');
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        const response = await fetchWithAuth(`/api/meetings/meetings/${currentUser._id}`);
+
+        if (!response.ok) {
+          const body = await parseResponseBody(response);
+          const message =
+            body && typeof body === 'object' && 'message' in body && typeof body.message === 'string'
+              ? body.message
+              : 'Unable to load meetings right now.';
+          throw new Error(message);
+        }
+
+        const data = (await response.json()) as RawMeeting[];
+        setMeetings(Array.isArray(data) ? data.map(normalizeMeeting) : []);
+        setError('');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unable to load meetings right now.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    void loadMeetings();
+  }, [currentUser?._id]);
+
+  const now = useMemo(() => new Date(), []);
+  const oneWeekAgo = useMemo(() => new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000), [now]);
+  const oneMonthAgo = useMemo(() => new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), [now]);
 
   const stats = useMemo(() => ({
-    total: MOCK_MEETINGS.length,
-    thisWeek: MOCK_MEETINGS.filter((m) => {
-      const d = parseDate(m.date);
-      return d >= oneWeekAgo && d <= now;
-    }).length,
-    future: MOCK_MEETINGS.filter((m) => m.status === 'Upcoming').length,
-  }), []);
+    total: meetings.length,
+    thisWeek: meetings.filter((meeting) => meeting.date >= oneWeekAgo && meeting.date <= now).length,
+    future: meetings.filter((meeting) => meeting.status === 'Upcoming').length,
+  }), [meetings, now, oneWeekAgo]);
 
   const filtered = useMemo(() => {
-    let result = [...MOCK_MEETINGS];
+    let result = [...meetings];
 
-    // Tab filter
     if (activeTab === 'Last Week') {
-      result = result.filter((m) => {
-        const d = parseDate(m.date);
-        return d >= oneWeekAgo && d <= now;
-      });
+      result = result.filter((meeting) => meeting.date >= oneWeekAgo && meeting.date <= now);
     } else if (activeTab === 'Last Month') {
-      result = result.filter((m) => {
-        const d = parseDate(m.date);
-        return d >= oneMonthAgo && d <= now;
-      });
+      result = result.filter((meeting) => meeting.date >= oneMonthAgo && meeting.date <= now);
     } else if (activeTab === 'Upcoming') {
-      result = result.filter((m) => m.status === 'Upcoming');
+      result = result.filter((meeting) => meeting.status === 'Upcoming');
     }
 
-    // Search
     if (search.trim()) {
-      const q = search.trim().toLowerCase();
+      const query = search.trim().toLowerCase();
       result = result.filter(
-        (m) =>
-          m.title.toLowerCase().includes(q) ||
-          m.date.includes(q)
+        (meeting) =>
+          meeting.title.toLowerCase().includes(query) ||
+          meeting.dateLabel.includes(query) ||
+          meeting.repository.toLowerCase().includes(query),
       );
     }
 
-    // Sort by date descending (newest first), upcoming at end for 'All'
     result.sort((a, b) => {
       if (activeTab === 'All') {
         if (a.status === 'Upcoming' && b.status !== 'Upcoming') return 1;
         if (a.status !== 'Upcoming' && b.status === 'Upcoming') return -1;
       }
-      return parseDate(b.date).getTime() - parseDate(a.date).getTime();
+
+      return b.date.getTime() - a.date.getTime();
     });
 
     return result;
-  }, [search, activeTab]);
+  }, [activeTab, meetings, now, oneMonthAgo, oneWeekAgo, search]);
 
-  const tabs: FilterTab[] = ['All', 'Last Week', 'Last Month', 'Upcoming'];
+  const openSummary = async (meeting: Meeting) => {
+    if (meeting.status !== 'Completed') {
+      return;
+    }
+
+    setSelectedMeeting(meeting);
+    setSummaryError('');
+
+    if (meeting.summary) {
+      return;
+    }
+
+    try {
+      setIsSummaryLoading(true);
+      const response = await fetchWithAuth(`/api/meetings/${meeting.id}/mingoAgent/generateSummary`);
+
+      if (!response.ok) {
+        throw new Error('Unable to load the meeting summary right now.');
+      }
+
+      const data = (await response.json()) as { summary?: string };
+      const summary = data.summary || 'No summary is available for this meeting yet.';
+      const updatedMeeting = { ...meeting, summary };
+
+      setSelectedMeeting(updatedMeeting);
+      setMeetings((prev) =>
+        prev.map((item) => (item.id === meeting.id ? updatedMeeting : item)),
+      );
+
+      await fetchWithAuth(`/api/meetings/meetings/${meeting.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ summary }),
+      });
+    } catch (err) {
+      setSummaryError(err instanceof Error ? err.message : 'Unable to load the meeting summary right now.');
+    } finally {
+      setIsSummaryLoading(false);
+    }
+  };
+
+  const createDemoMeeting = async () => {
+    if (!currentUser?._id || isCreatingDemo) {
+      return;
+    }
+
+    try {
+      setIsCreatingDemo(true);
+      setError('');
+
+      const summary =
+        'This demo meeting covered project planning, action items, and next steps. It exists only so the completed-meeting summary flow can be tested.';
+      const response = await fetchWithAuth('/api/meetings/meetings', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: 'Demo Completed Meeting',
+          gitHubRepoName: 'Mingo',
+          participants: [currentUser._id],
+          attendeeEmails: ['external.guest@example.com', 'product.guest@example.com'],
+          status: 'completed',
+          duration: 35,
+          summary,
+          topics: ['Project planning', 'Action items', 'Next steps'],
+          date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+          endedAt: new Date().toISOString(),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Unable to create demo meeting right now.');
+      }
+
+      const createdMeeting = (await response.json()) as RawMeeting;
+      setMeetings((prev) => [normalizeMeeting(createdMeeting), ...prev]);
+      setActiveTab('All');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to create demo meeting right now.');
+    } finally {
+      setIsCreatingDemo(false);
+    }
+  };
 
   return (
     <div className="history-layout">
       <Header />
 
       <main className="history-main">
-        {/* Stats */}
         <div className="history-stats-row">
           <div className="history-stat-card" onClick={() => setActiveTab('All')}>
             <div className="hstat-icon hstat-icon--total">
@@ -131,7 +316,6 @@ const HistoryPage = () => {
           </div>
         </div>
 
-        {/* Search + Tabs */}
         <div className="history-toolbar">
           <div className="history-search-box">
             <svg className="hsearch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -141,10 +325,10 @@ const HistoryPage = () => {
               type="text"
               placeholder="Search meetings..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(event) => setSearch(event.target.value)}
             />
             {search && (
-              <button className="hsearch-clear" onClick={() => setSearch('')}>
+              <button className="hsearch-clear" onClick={() => setSearch('')} aria-label="Clear search">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
@@ -165,14 +349,27 @@ const HistoryPage = () => {
           </div>
         </div>
 
-        {/* Meeting List */}
         <div className="history-card">
           <div className="history-card-header">
             <h2>Your Meetings</h2>
-            <span className="history-count">{filtered.length} {filtered.length === 1 ? 'meeting' : 'meetings'}</span>
+            <div className="history-card-header__actions">
+              <button
+                type="button"
+                className="history-demo-button"
+                onClick={createDemoMeeting}
+                disabled={isCreatingDemo}
+              >
+                {isCreatingDemo ? 'Creating...' : 'Create demo meeting'}
+              </button>
+              <span className="history-count">{filtered.length} {filtered.length === 1 ? 'meeting' : 'meetings'}</span>
+            </div>
           </div>
 
-          {filtered.length === 0 ? (
+          {isLoading ? (
+            <div className="history-empty"><p>Loading meetings...</p></div>
+          ) : error ? (
+            <div className="history-empty"><p>{error}</p></div>
+          ) : filtered.length === 0 ? (
             <div className="history-empty">
               <svg viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
@@ -182,7 +379,13 @@ const HistoryPage = () => {
           ) : (
             <div className="history-list">
               {filtered.map((meeting) => (
-                <div key={meeting.id} className="history-row">
+                <button
+                  key={meeting.id}
+                  type="button"
+                  className={`history-row ${meeting.status === 'Completed' ? 'history-row--clickable' : ''}`}
+                  onClick={() => openSummary(meeting)}
+                  disabled={meeting.status !== 'Completed'}
+                >
                   <div className={`history-row-icon ${meeting.status === 'Upcoming' ? 'history-row-icon--upcoming' : ''}`}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
@@ -195,7 +398,7 @@ const HistoryPage = () => {
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
                       </svg>
-                      {meeting.date}, {meeting.time}
+                      {meeting.dateLabel}, {meeting.timeLabel}
                       <span className="hmeta-sep">|</span>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" />
@@ -211,18 +414,88 @@ const HistoryPage = () => {
                         {meeting.duration}
                       </span>
                     ) : (
-                      <span className="history-badge history-badge--upcoming">Upcoming</span>
+                      <span className="history-badge history-badge--upcoming">{meeting.status}</span>
                     )}
                     {meeting.tasksCount > 0 && (
                       <span className="history-tasks-badge">{meeting.tasksCount} tasks</span>
                     )}
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}
         </div>
       </main>
+
+      {selectedMeeting && (
+        <div className="meeting-summary-modal__overlay">
+          <div className="meeting-summary-modal">
+            <button
+              type="button"
+              className="meeting-summary-modal__close"
+              onClick={() => setSelectedMeeting(null)}
+              aria-label="Close summary"
+            >
+              x
+            </button>
+
+            <div className="meeting-summary__header">
+              <div>
+                <span className="meeting-summary__eyebrow">Meeting Summary</span>
+                <h2>📝 {selectedMeeting.title}</h2>
+              </div>
+            </div>
+
+            <div className="meeting-summary__facts">
+              <article className="meeting-summary__fact">
+                <strong>Date</strong>
+                <span>{selectedMeeting.dateLabel}, {selectedMeeting.timeLabel}</span>
+              </article>
+              <article className="meeting-summary__fact">
+                <strong>Duration</strong>
+                <span>{selectedMeeting.duration}</span>
+              </article>
+              <article className="meeting-summary__fact">
+                <strong>Repository</strong>
+                <span>{selectedMeeting.repository}</span>
+              </article>
+              <article className="meeting-summary__fact">
+                <strong>Participants</strong>
+                <span>{selectedMeeting.participants}</span>
+              </article>
+            </div>
+
+            <article className="meeting-summary__card">
+              <h3>✨ Summary</h3>
+              {isSummaryLoading ? (
+                <p>Loading summary...</p>
+              ) : summaryError ? (
+                <p>{summaryError}</p>
+              ) : (
+                <p>{selectedMeeting.summary || 'No summary is available for this meeting yet.'}</p>
+              )}
+            </article>
+
+            <article className="meeting-summary__card">
+              <h3>👥 Participants Who Attended</h3>
+              <div className="meeting-summary__participants">
+                {selectedMeeting.participantLabels.length > 0 ? (
+                  selectedMeeting.participantLabels.map((participant) => (
+                    <span key={participant}>{participant}</span>
+                  ))
+                ) : (
+                  <p className="meeting-summary__empty">No participants were saved for this meeting.</p>
+                )}
+              </div>
+            </article>
+
+            <article className="meeting-summary__card">
+              <h3>✅ Tasks</h3>
+              <p>{selectedMeeting.tasksCount} tasks are connected to this meeting.</p>
+            </article>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
