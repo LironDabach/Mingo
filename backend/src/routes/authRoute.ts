@@ -287,4 +287,10 @@ router.get(
   authController.getGitHubRepositories,
 );
 
+router.get(
+  "/github/projects",
+  authenticate,
+  authController.getGitHubProjects,
+);
+
 export default router;

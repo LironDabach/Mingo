@@ -52,6 +52,14 @@ const userSchema = new mongoose.Schema({
     unique: true,
     sparse: true,
   },
+  googleAccessToken: {
+    type: String,
+    required: false,
+  },
+  googleTokenScope: {
+    type: String,
+    required: false,
+  },
 });
 
 export default mongoose.model("user", userSchema);

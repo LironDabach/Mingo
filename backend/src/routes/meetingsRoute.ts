@@ -121,6 +121,7 @@ router.post("/meetings", authenticate, meetingsController.create.bind(meetingsCo
 router.get("/meetings/:id", authenticate, meetingsController.getById.bind(meetingsController));
 router.put("/meetings/:id", authenticate, meetingsController.update.bind(meetingsController));
 router.delete("/meetings/:id", authenticate, meetingsController.delete.bind(meetingsController));
+router.post("/meetings/:id/send-summary-email", authenticate, meetingsController.sendSummaryEmail.bind(meetingsController));
 
 /**
  * @openapi

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header/Header';
@@ -129,6 +129,12 @@ const MeetingPage = () => {
   const storedUser = getStoredUser();
   const rawDraft = localStorage.getItem('currentMeetingDraft');
   const parsedDraft = rawDraft ? (JSON.parse(rawDraft) as MeetingDraft) : null;
+  const initialMeetingId =
+    parsedDraft?.id ||
+    localStorage.getItem('currentMeetingId') ||
+    localStorage.getItem('lastSummaryMeetingId') ||
+    '';
+  const meetingIdRef = useRef(initialMeetingId);
 
   const attendees = useMemo(() => {
     const draftAttendees = parsedDraft?.attendees || [];
@@ -150,9 +156,12 @@ const MeetingPage = () => {
   const [chatInput, setChatInput] = useState('');
   const [showSummary, setShowSummary] = useState(false);
   const [summaryText, setSummaryText] = useState('');
+  const [summaryMeetingId, setSummaryMeetingId] = useState(initialMeetingId);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState('');
   const [emailSent, setEmailSent] = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailError, setEmailError] = useState('');
   const [tasks, setTasks] = useState<Task[]>(DEFAULT_TASKS);
 
   const completedTasks = tasks.filter((task) => task.done);
@@ -185,11 +194,22 @@ const MeetingPage = () => {
   };
 
   const handleEndMeeting = async () => {
-    const meetingId = parsedDraft?.id || localStorage.getItem('currentMeetingId');
+    const meetingId =
+      meetingIdRef.current ||
+      parsedDraft?.id ||
+      localStorage.getItem('currentMeetingId') ||
+      localStorage.getItem('lastSummaryMeetingId') ||
+      '';
     const fallbackSummary = summaryNarrative;
 
+    if (meetingId) {
+      meetingIdRef.current = meetingId;
+      localStorage.setItem('lastSummaryMeetingId', meetingId);
+    }
     setShowSummary(true);
     setEmailSent(false);
+    setEmailError('');
+    setSummaryMeetingId(meetingId);
     setSummaryText(fallbackSummary);
     setSummaryError('');
 
@@ -221,6 +241,7 @@ const MeetingPage = () => {
           status: 'completed',
           duration,
           summary: generatedSummary,
+          topics: DEFAULT_TOPICS.map((topic) => topic.title),
           endedAt: new Date().toISOString(),
         }),
       });
@@ -237,8 +258,49 @@ const MeetingPage = () => {
     }
   };
 
-  const handleSendSummaryEmail = () => {
-    setEmailSent(true);
+  const handleSendSummaryEmail = async () => {
+    const meetingId =
+      meetingIdRef.current ||
+      summaryMeetingId ||
+      parsedDraft?.id ||
+      localStorage.getItem('currentMeetingId') ||
+      localStorage.getItem('lastSummaryMeetingId') ||
+      '';
+
+    if (!meetingId) {
+      setEmailError('Meeting ID is missing.');
+      return;
+    }
+
+    try {
+      setEmailSending(true);
+      setEmailError('');
+      const response = await fetchWithAuth(`/api/meetings/meetings/${meetingId}/send-summary-email`, {
+        method: 'POST',
+        body: JSON.stringify({
+          summary: summaryText || summaryNarrative,
+          topics: DEFAULT_TOPICS.map((topic) => `${topic.title}: ${topic.description}`),
+          closedTasks: completedTasks.map((task) => `${task.title} (${task.assignee}, ${task.tag})`),
+          openTasks: openTasks.map((task) => `${task.title} (${task.assignee}, ${task.due})`),
+        }),
+      });
+
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || 'Unable to send summary email right now.');
+      }
+
+      setEmailSent(true);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to send summary email right now.';
+      setEmailError(
+        message.includes('Gmail')
+          ? `${message} Open Settings and click Re-sync Google account.`
+          : message,
+      );
+    } finally {
+      setEmailSending(false);
+    }
   };
 
   const toggleTask = (taskId: number) => {
@@ -539,13 +601,14 @@ const MeetingPage = () => {
             </div>
 
             <div className="meeting-summary-modal__actions">
+              {emailError && <p className="meeting-summary-modal__error">{emailError}</p>}
               <button
                 type="button"
                 className={`meeting-summary-modal__mail ${emailSent ? 'meeting-summary-modal__mail--sent' : ''}`}
                 onClick={handleSendSummaryEmail}
-                disabled={emailSent}
+                disabled={emailSent || emailSending || summaryLoading}
               >
-                {emailSent ? 'Summary Sent' : 'Send by Email'}
+                {emailSending ? 'Sending...' : emailSent ? 'Summary Sent' : 'Send by Email'}
               </button>
               <button
                 type="button"

@@ -38,6 +38,32 @@ type GitHubTokenDetails = {
   scope?: string | undefined;
 };
 
+type GitHubProjectOption = {
+  id: string;
+  number: number;
+  title: string;
+  url?: string | null;
+  updatedAt?: string | null;
+  items?: {
+    totalCount?: number;
+  };
+};
+
+type GitHubOrganizationProjects = {
+  login?: string;
+  projectsV2?: {
+    nodes?: GitHubProjectOption[];
+  };
+};
+
+type CachedGitHubProjects = {
+  expiresAt: number;
+  data: Array<Record<string, unknown>>;
+};
+
+const GITHUB_PROJECTS_CACHE_MS = 5 * 60 * 1000;
+const githubProjectsCache = new Map<string, CachedGitHubProjects>();
+
 const buildAuthResponse = (user: any, tokens: GeneratedTokens) => ({
   ...tokens,
   user: {
@@ -235,6 +261,26 @@ const fetchGitHubResource = async (
   }
 
   return lastResponse;
+};
+
+const getGitHubAuthorization = (user: any) => {
+  const tokenType =
+    typeof user.githubTokenType === "string" &&
+    user.githubTokenType.trim().toLowerCase() === "bearer"
+      ? "Bearer"
+      : "token";
+
+  return `${tokenType} ${user.githubAccessToken}`;
+};
+
+const hasGitHubScope = (user: any, scope: string) => {
+  const scopes =
+    typeof user.githubTokenScope === "string" ? user.githubTokenScope : "";
+  return scopes
+    .split(/[,\s]+/)
+    .map((value: string) => value.trim())
+    .filter(Boolean)
+    .includes(scope);
 };
 
 const register = async (req: Request, res: Response) => {
@@ -507,6 +553,10 @@ const gitHubLogin = async (req: Request, res: Response) => {
 };
 
 const googleClient = new OAuth2Client();
+const GOOGLE_CALENDAR_EVENTS_SCOPE =
+  "https://www.googleapis.com/auth/calendar.events";
+const GOOGLE_GMAIL_SEND_SCOPE =
+  "https://www.googleapis.com/auth/gmail.send";
 
 const disconnectOAuthProvider = async (
   req: Request,
@@ -549,7 +599,13 @@ const disconnectOAuthProvider = async (
               githubTokenScope: 1,
             },
           }
-        : { $unset: { [fieldToUnset]: 1 } },
+        : {
+            $unset: {
+              [fieldToUnset]: 1,
+              googleAccessToken: 1,
+              googleTokenScope: 1,
+            },
+          },
     );
 
     return res.status(200).json({
@@ -582,6 +638,7 @@ const googleLogin = async (req: Request, res: Response) => {
           picture?: string;
         }
       | undefined;
+    let verifiedGoogleScope = "";
 
     if (credential) {
       const ticket = await googleClient.verifyIdToken({
@@ -610,6 +667,18 @@ const googleLogin = async (req: Request, res: Response) => {
         name?: string;
         picture?: string;
       };
+
+      const tokenInfoResponse = await fetch(
+        `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`,
+      );
+
+      if (tokenInfoResponse.ok) {
+        const tokenInfo = (await tokenInfoResponse.json()) as {
+          scope?: string;
+        };
+        verifiedGoogleScope =
+          typeof tokenInfo.scope === "string" ? tokenInfo.scope : "";
+      }
     }
 
     if (!profile?.sub || !profile?.email) {
@@ -631,6 +700,12 @@ const googleLogin = async (req: Request, res: Response) => {
     }
 
     const user = result.user!;
+    if (accessToken) {
+      user.googleAccessToken = accessToken;
+      user.googleTokenScope =
+        verifiedGoogleScope ||
+        (typeof req.body.scope === "string" ? req.body.scope : "");
+    }
     const tokens = generateToken(user._id.toString());
     user.refreshTokens.push(tokens.refreshToken);
     await user.save();
@@ -679,16 +754,10 @@ const getGitHubRepositories = async (req: Request, res: Response) => {
       );
     }
 
-    const tokenType =
-      typeof user.githubTokenType === "string" &&
-      user.githubTokenType.trim().toLowerCase() === "bearer"
-        ? "Bearer"
-        : "token";
-
     const response = await fetch("https://api.github.com/user/repos?sort=updated&per_page=100", {
       headers: {
         Accept: "application/vnd.github+json",
-        Authorization: `${tokenType} ${user.githubAccessToken}`,
+        Authorization: getGitHubAuthorization(user),
         "User-Agent": "Mingo",
         "X-GitHub-Api-Version": "2022-11-28",
       },
@@ -725,6 +794,171 @@ const getGitHubRepositories = async (req: Request, res: Response) => {
   }
 };
 
+const getGitHubProjects = async (req: Request, res: Response) => {
+  const authenticatedUserId = getAuthenticatedUserId(req);
+
+  if (!authenticatedUserId) {
+    return sendError(
+      401,
+      "Unauthorized: missing or invalid Authorization header",
+      res,
+    );
+  }
+
+  try {
+    const user = await User.findById(authenticatedUserId);
+
+    if (!user?.githubAccessToken) {
+      return sendError(
+        400,
+        "GitHub is not synced yet. Connect it from settings when available.",
+        res,
+      );
+    }
+
+    const cacheKey = authenticatedUserId;
+    const cachedProjects = githubProjectsCache.get(cacheKey);
+    if (cachedProjects && cachedProjects.expiresAt > Date.now()) {
+      return res.status(200).json(cachedProjects.data);
+    }
+
+    const canReadOrganizations = hasGitHubScope(user, "read:org");
+    const organizationProjectsQuery = canReadOrganizations
+      ? `
+              organizations(first: 50) {
+                nodes {
+                  login
+                  projectsV2(first: 50, minPermissionLevel: ADMIN, orderBy: { field: UPDATED_AT, direction: DESC }) {
+                    nodes {
+                      id
+                      number
+                      title
+                      url
+                      updatedAt
+                      items(first: 1) {
+                        totalCount
+                      }
+                    }
+                  }
+                }
+              }
+        `
+      : "";
+
+    const response = await fetch("https://api.github.com/graphql", {
+      method: "POST",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: getGitHubAuthorization(user),
+        "Content-Type": "application/json",
+        "User-Agent": "Mingo",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      body: JSON.stringify({
+        query: `
+          query ViewerProjects {
+            viewer {
+              login
+              projectsV2(first: 50, minPermissionLevel: ADMIN, orderBy: { field: UPDATED_AT, direction: DESC }) {
+                nodes {
+                  id
+                  number
+                  title
+                  url
+                  updatedAt
+                  items(first: 1) {
+                    totalCount
+                  }
+                }
+              }
+              ${organizationProjectsQuery}
+            }
+          }
+        `,
+      }),
+    });
+
+    const data = (await response.json()) as {
+      data?: {
+        viewer?: {
+          login?: string;
+          projectsV2?: {
+            nodes?: GitHubProjectOption[];
+          };
+          organizations?: {
+            nodes?: GitHubOrganizationProjects[];
+          };
+        };
+      };
+      errors?: Array<{ message?: string }>;
+      message?: string;
+    };
+
+    if (!response.ok || data.errors?.length) {
+      const message =
+        data.errors?.map((error) => error.message).filter(Boolean).join(", ") ||
+        data.message ||
+        "Failed to load GitHub projects";
+      const isRateLimited = message.toLowerCase().includes("rate limit");
+      return sendError(
+        isRateLimited
+          ? 429
+          : response.status === 401 || response.status === 403
+            ? response.status
+            : 502,
+        isRateLimited
+          ? "GitHub API rate limit reached. Please wait a bit and try syncing again."
+          : message,
+        res,
+      );
+    }
+
+    const owner = data.data?.viewer?.login || "";
+    const viewerProjects = (data.data?.viewer?.projectsV2?.nodes || []).map((project) => ({
+      project,
+      owner,
+      ownerType: "users",
+    }));
+    const organizationProjects = (data.data?.viewer?.organizations?.nodes || []).flatMap((organization) =>
+      (organization.projectsV2?.nodes || []).map((project) => ({
+        project,
+        owner: organization.login || "",
+        ownerType: "orgs",
+      })),
+    );
+    const uniqueProjects = Array.from(
+      new Map(
+        [...viewerProjects, ...organizationProjects]
+          .filter(({ project }) => project?.id && project?.number && project?.title)
+          .filter(({ project }) => (project.items?.totalCount || 0) > 0)
+          .map((entry) => [entry.project.id, entry]),
+      ).values(),
+    );
+
+    const responseProjects = uniqueProjects.map(({ project, owner: projectOwner, ownerType }) => ({
+      id: project.id,
+      title: project.title,
+      number: project.number,
+      owner: projectOwner,
+      ownerType,
+      url:
+        project.url ||
+        (projectOwner ? `https://github.com/${ownerType}/${projectOwner}/projects/${project.number}` : ""),
+      taskCount: project.items?.totalCount || 0,
+      updatedAt: project.updatedAt || null,
+    }));
+
+    githubProjectsCache.set(cacheKey, {
+      expiresAt: Date.now() + GITHUB_PROJECTS_CACHE_MS,
+      data: responseProjects,
+    });
+
+    return res.status(200).json(responseProjects);
+  } catch (_err) {
+    return sendError(500, "Failed to load GitHub projects", res);
+  }
+};
+
 export default {
   register,
   login,
@@ -736,5 +970,6 @@ export default {
   disconnectGitHub,
   getOAuthConfig,
   getGitHubRepositories,
+  getGitHubProjects,
 };
 

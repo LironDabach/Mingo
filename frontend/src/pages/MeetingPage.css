@@ -272,9 +272,19 @@
 
 .meeting-summary-modal__actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 12px;
   margin-top: 18px;
+}
+
+.meeting-summary-modal__error {
+  flex-basis: 100%;
+  margin: 0;
+  color: #dc2626;
+  font-size: 13px;
+  text-align: right;
 }
 
 .meeting-summary-modal__mail,

@@ -1,0 +1,14 @@
+.upload-meeting-modal {
+  max-width: 920px;
+}
+
+.upload-meeting-zone {
+  width: 100%;
+  min-height: 150px;
+  border: 2px dashed #93c5fd;
+  background: #f8fbff;
+}
+
+.upload-meeting-zone:hover {
+  background: #eff6ff;
+}

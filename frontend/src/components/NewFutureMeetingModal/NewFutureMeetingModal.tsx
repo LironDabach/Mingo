@@ -46,6 +46,7 @@ const isSameLocalDate = (left: Date, right: Date) =>
 
 const NewFutureMeetingModal = ({ onClose }: NewFutureMeetingModalProps) => {
   const currentUser = getStoredUser();
+  const [title, setTitle] = useState('');
   const [emailInput, setEmailInput] = useState('');
   const [attendees, setAttendees] = useState<AttendeeEntry[]>([]);
   const [repository, setRepository] = useState('');
@@ -228,6 +229,7 @@ const NewFutureMeetingModal = ({ onClose }: NewFutureMeetingModalProps) => {
   const scheduledDate = buildScheduledDate();
   const isCreateDisabled =
     isSubmitting ||
+    !title.trim() ||
     !repository.trim() ||
     !scheduledDate ||
     scheduledDate.getTime() <= Date.now() ||
@@ -250,6 +252,11 @@ const NewFutureMeetingModal = ({ onClose }: NewFutureMeetingModalProps) => {
 
     if (!repository.trim()) {
       setError('Please choose a GitHub repository before creating the meeting.');
+      return;
+    }
+
+    if (!title.trim()) {
+      setError('Please enter a meeting title.');
       return;
     }
 
@@ -280,7 +287,7 @@ const NewFutureMeetingModal = ({ onClose }: NewFutureMeetingModalProps) => {
       const response = await fetchWithAuth('/api/meetings/meetings', {
         method: 'POST',
         body: JSON.stringify({
-          title: `${repository.trim()} Future Meeting`,
+          title: title.trim(),
           gitHubRepoName: repository.trim(),
           attendeeEmails,
           date: scheduledDate.toISOString(),
@@ -295,7 +302,12 @@ const NewFutureMeetingModal = ({ onClose }: NewFutureMeetingModalProps) => {
 
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to create the meeting right now.');
+      const message = err instanceof Error ? err.message : 'Unable to create the meeting right now.';
+      setError(
+        message.includes('Google Calendar')
+          ? `${message} Open Settings and click Re-sync Google account.`
+          : message,
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -316,6 +328,20 @@ const NewFutureMeetingModal = ({ onClose }: NewFutureMeetingModalProps) => {
         <form onSubmit={handleCreate}>
           <div className="start-meeting-grid future-meeting-grid">
             <div className="start-meeting-column">
+              <div className="start-meeting-field">
+                <h3 className="modal-column-title">Title</h3>
+                <input
+                  className="future-meeting-input"
+                  type="text"
+                  placeholder="Meeting title"
+                  value={title}
+                  onChange={(event) => {
+                    setTitle(event.target.value);
+                    setError('');
+                  }}
+                />
+              </div>
+
               <div className="start-meeting-field">
                 <h3 className="modal-column-title">GitHub Repository</h3>
                 <select
