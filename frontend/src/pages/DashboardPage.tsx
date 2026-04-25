@@ -4,14 +4,8 @@ import Header from '../components/Header/Header';
 import StartMeetingModal from '../components/StartMeetingModal/StartMeetingModal';
 import NewFutureMeetingModal from '../components/NewFutureMeetingModal/NewFutureMeetingModal';
 import UploadMeetingModal from '../components/UploadMeetingModal/UploadMeetingModal';
+import { fetchWithAuth, getStoredUser, parseResponseBody } from '../lib/auth';
 import './DashboardPage.css';
-
-const upcomingMeetings = [
-  { id: 1, title: 'Q1 Strategy Review', date: 'Friday, 15:00', participants: 3, icon: '📋' },
-  { id: 2, title: 'Code Review', date: 'Today, 09:00', participants: 1, icon: '📋' },
-  { id: 3, title: 'Q7 Strategy Review', date: '21.01.26, 09:00', participants: 1, icon: '📋' },
-  { id: 4, title: 'Q3 Strategy Review', date: '24.01.26, 09:00', participants: 1, icon: '📋' },
-];
 
 const openTasks = [
   { id: 1, title: 'Figma Design', assignee: 'Planning...', dueDate: 'John Deborah', priority: 'Low', tag: 'MNGO-41', done: false },
@@ -27,14 +21,241 @@ const recentMeetings = [
   { id: 4, title: '2025 Retro', date: '01.12.25, 15:00', duration: '45 min', bullets: 4, color: '#f97316' },
 ];
 
+type DashboardMeeting = {
+  id: string;
+  title: string;
+  scheduledAt: string;
+  date: string;
+  gitHubRepoName?: string;
+  participants: number;
+  attendees: DraftAttendee[];
+};
+
+type DraftAttendee = {
+  email: string;
+  displayName: string;
+  isRegistered: boolean;
+};
+
+type RawParticipant = {
+  _id?: string;
+  fullname?: string;
+  username?: string;
+  email?: string;
+};
+
+type RawMeeting = {
+  _id: string;
+  title: string;
+  date: string;
+  gitHubRepoName?: string;
+  participants?: RawParticipant[];
+  inviteEmails?: string[];
+};
+
+type AverageDurationResponse = {
+  averageDuration?: number;
+};
+
+const formatDashboardMeetingDate = (value: string) => {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Date unavailable';
+  }
+
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+};
+
+const normalizeDashboardMeeting = (meeting: RawMeeting): DashboardMeeting => {
+  const registeredAttendees = Array.isArray(meeting.participants)
+    ? meeting.participants
+        .filter((participant) => participant.email)
+        .map((participant) => ({
+          email: participant.email || '',
+          displayName: participant.fullname || participant.username || participant.email || 'Attendee',
+          isRegistered: true,
+        }))
+    : [];
+  const invitedAttendees = Array.isArray(meeting.inviteEmails)
+    ? meeting.inviteEmails.map((email) => ({
+        email,
+        displayName: email,
+        isRegistered: false,
+      }))
+    : [];
+  const attendees = [...registeredAttendees, ...invitedAttendees].filter(
+    (attendee, index, array) =>
+      attendee.email &&
+      array.findIndex((candidate) => candidate.email === attendee.email) === index,
+  );
+
+  return {
+    id: meeting._id,
+    title: meeting.title || 'Untitled Meeting',
+    scheduledAt: meeting.date,
+    date: formatDashboardMeetingDate(meeting.date),
+    gitHubRepoName: meeting.gitHubRepoName,
+    participants: attendees.length,
+    attendees,
+  };
+};
+
+const formatStatNumber = (value: number | null) => (value === null ? '...' : String(value));
+
+const formatAverageDuration = (value: number | null) =>
+  value === null ? '...' : String(Math.round(value));
+
+const countUpcomingThisWeek = (meetings: DashboardMeeting[]) => {
+  const now = Date.now();
+  const weekFromNow = now + 7 * 24 * 60 * 60 * 1000;
+
+  return meetings.filter((meeting) => {
+    const meetingTime = new Date(meeting.scheduledAt).getTime();
+    return !Number.isNaN(meetingTime) && meetingTime >= now && meetingTime <= weekFromNow;
+  }).length;
+};
+
 const DashboardPage = () => {
   const navigate = useNavigate();
+  const currentUser = getStoredUser();
   const [showStartMeeting, setShowStartMeeting] = useState(false);
   const [showNewFutureMeeting, setShowNewFutureMeeting] = useState(false);
   const [showUploadMeeting, setShowUploadMeeting] = useState(false);
+  const [serverUpcomingMeetings, setServerUpcomingMeetings] = useState<DashboardMeeting[]>([]);
+  const [isLoadingUpcoming, setIsLoadingUpcoming] = useState(false);
+  const [upcomingError, setUpcomingError] = useState('');
+  const [startingMeetingId, setStartingMeetingId] = useState('');
+  const [meetingsThisMonth, setMeetingsThisMonth] = useState<number | null>(null);
+  const [averageDuration, setAverageDuration] = useState<number | null>(null);
+  const [statsError, setStatsError] = useState('');
   const [hasActiveMeeting, setHasActiveMeeting] = useState(
     Boolean(localStorage.getItem('currentMeetingId')),
   );
+  const upcomingThisWeekCount = countUpcomingThisWeek(serverUpcomingMeetings);
+
+  const loadUpcomingMeetings = async () => {
+    if (!currentUser?._id) {
+      setServerUpcomingMeetings([]);
+      return;
+    }
+
+    try {
+      setIsLoadingUpcoming(true);
+      const response = await fetchWithAuth(`/api/meetings/meetings/${currentUser._id}/upcoming`);
+
+      if (!response.ok) {
+        const body = await parseResponseBody(response);
+        const message =
+          body && typeof body === 'object' && 'message' in body && typeof body.message === 'string'
+            ? body.message
+            : 'Unable to load upcoming meetings.';
+        throw new Error(message);
+      }
+
+      const data = (await response.json()) as RawMeeting[];
+      setServerUpcomingMeetings(
+        Array.isArray(data) ? data.map(normalizeDashboardMeeting).slice(0, 4) : [],
+      );
+      setUpcomingError('');
+    } catch (err) {
+      setUpcomingError(err instanceof Error ? err.message : 'Unable to load upcoming meetings.');
+    } finally {
+      setIsLoadingUpcoming(false);
+    }
+  };
+
+  const loadDashboardStats = async () => {
+    if (!currentUser?._id) {
+      setMeetingsThisMonth(0);
+      setAverageDuration(0);
+      return;
+    }
+
+    try {
+      setStatsError('');
+
+      const [monthResponse, durationResponse] = await Promise.all([
+        fetchWithAuth(`/api/meetings/meetings/${currentUser._id}/this-month`),
+        fetchWithAuth(`/api/meetings/meetings/${currentUser._id}/average-duration`),
+      ]);
+
+      if (!monthResponse.ok) {
+        throw new Error('Unable to load monthly meeting stats.');
+      }
+
+      if (!durationResponse.ok) {
+        throw new Error('Unable to load average duration.');
+      }
+
+      const monthMeetings = (await monthResponse.json()) as RawMeeting[];
+      const durationData = (await durationResponse.json()) as AverageDurationResponse;
+
+      setMeetingsThisMonth(Array.isArray(monthMeetings) ? monthMeetings.length : 0);
+      setAverageDuration(
+        typeof durationData.averageDuration === 'number'
+          ? durationData.averageDuration
+          : 0,
+      );
+    } catch (err) {
+      setStatsError(err instanceof Error ? err.message : 'Unable to load dashboard stats.');
+      setMeetingsThisMonth(0);
+      setAverageDuration(0);
+    }
+  };
+
+  const handleStartUpcomingMeeting = async (meeting: DashboardMeeting) => {
+    if (hasActiveMeeting || startingMeetingId) {
+      return;
+    }
+
+    try {
+      setStartingMeetingId(meeting.id);
+      setUpcomingError('');
+
+      const response = await fetchWithAuth(`/api/meetings/meetings/${meeting.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          status: 'live',
+          date: new Date().toISOString(),
+        }),
+      });
+
+      if (!response.ok) {
+        const body = await parseResponseBody(response);
+        const message =
+          body && typeof body === 'object' && 'message' in body && typeof body.message === 'string'
+            ? body.message
+            : 'Unable to start this meeting right now.';
+        throw new Error(message);
+      }
+
+      const startedAt = new Date().toISOString();
+      localStorage.setItem('currentMeetingId', meeting.id);
+      localStorage.setItem(
+        'currentMeetingDraft',
+        JSON.stringify({
+          id: meeting.id,
+          title: meeting.title,
+          date: startedAt,
+          gitHubRepoName: meeting.gitHubRepoName || '',
+          attendees: meeting.attendees,
+        }),
+      );
+      setHasActiveMeeting(true);
+      navigate('/meetings/live');
+    } catch (err) {
+      setUpcomingError(err instanceof Error ? err.message : 'Unable to start this meeting right now.');
+    } finally {
+      setStartingMeetingId('');
+    }
+  };
 
   useEffect(() => {
     const syncMeetingState = () => {
@@ -46,6 +267,11 @@ const DashboardPage = () => {
 
     return () => window.removeEventListener('storage', syncMeetingState);
   }, []);
+
+  useEffect(() => {
+    void loadUpcomingMeetings();
+    void loadDashboardStats();
+  }, [currentUser?._id]);
 
   return (
     <div className="dashboard-layout">
@@ -119,7 +345,9 @@ const DashboardPage = () => {
                 <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
               </svg>
             </div>
-            <span className="stat-number">24</span>
+            <span className="stat-number" title={statsError || undefined}>
+              {formatStatNumber(meetingsThisMonth)}
+            </span>
             <span className="stat-label">Meetings this month</span>
           </div>
           <div className="stat-card">
@@ -129,7 +357,9 @@ const DashboardPage = () => {
                 <polyline points="12 6 12 12 16 14" />
               </svg>
             </div>
-            <span className="stat-number">48</span>
+            <span className="stat-number" title={statsError || undefined}>
+              {formatAverageDuration(averageDuration)}
+            </span>
             <span className="stat-label">Average duration</span>
           </div>
           <div className="stat-card">
@@ -141,8 +371,8 @@ const DashboardPage = () => {
                 <line x1="3" y1="10" x2="21" y2="10" />
               </svg>
             </div>
-            <span className="stat-number">7</span>
-            <span className="stat-label">Following meetings</span>
+            <span className="stat-number">{isLoadingUpcoming ? '...' : upcomingThisWeekCount}</span>
+            <span className="stat-label">Upcoming this week</span>
           </div>
         </div>
 
@@ -152,10 +382,19 @@ const DashboardPage = () => {
           <div className="dashboard-section">
             <div className="section-header">
               <h2>Upcoming</h2>
-              <a href="#" className="view-all">View All</a>
+              {!isLoadingUpcoming && serverUpcomingMeetings.length > 0 && (
+                <button type="button" className="view-all" onClick={() => navigate('/meetings')}>View All</button>
+              )}
             </div>
             <div className="section-list">
-              {upcomingMeetings.map((m) => (
+              {upcomingError && <p className="dashboard-empty-state">{upcomingError}</p>}
+              {!upcomingError && isLoadingUpcoming && (
+                <p className="dashboard-empty-state">Loading upcoming meetings...</p>
+              )}
+              {!upcomingError && !isLoadingUpcoming && serverUpcomingMeetings.length === 0 && (
+                <p className="dashboard-empty-state">No upcoming meetings yet.</p>
+              )}
+              {!upcomingError && !isLoadingUpcoming && serverUpcomingMeetings.map((m) => (
                 <div className="upcoming-item" key={m.id}>
                   <div className="upcoming-info">
                     <span className="upcoming-title">{m.title}</span>
@@ -163,7 +402,13 @@ const DashboardPage = () => {
                       📅 {m.date} &nbsp; 👤 {m.participants}
                     </span>
                   </div>
-                  <button className="btn-start">Start</button>
+                  <button
+                    className="btn-start"
+                    disabled={hasActiveMeeting || startingMeetingId === m.id}
+                    onClick={() => void handleStartUpcomingMeeting(m)}
+                  >
+                    {startingMeetingId === m.id ? 'Starting...' : 'Start'}
+                  </button>
                 </div>
               ))}
             </div>
@@ -230,7 +475,13 @@ const DashboardPage = () => {
         <StartMeetingModal onClose={() => setShowStartMeeting(false)} />
       )}
       {showNewFutureMeeting && (
-        <NewFutureMeetingModal onClose={() => setShowNewFutureMeeting(false)} />
+        <NewFutureMeetingModal
+          onClose={() => {
+            setShowNewFutureMeeting(false);
+            void loadUpcomingMeetings();
+            void loadDashboardStats();
+          }}
+        />
       )}
       {showUploadMeeting && (
         <UploadMeetingModal onClose={() => setShowUploadMeeting(false)} />

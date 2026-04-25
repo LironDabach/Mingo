@@ -35,7 +35,7 @@ https://www.figma.com/design/PZwBOtFnZjefUpEcGfWJMP/Mingo?node-id=0-1&t=wAW2puPQ
 ✅ AI-generated summaries  
 ✅ AI meeting assistant  
 ✅ Automatic task extraction and tracking through the GitHub API  
-✅ Meeting history and follow-ups  
+✅ Meetings and follow-ups  
 
 ---
 

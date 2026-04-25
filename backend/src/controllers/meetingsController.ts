@@ -10,6 +10,10 @@ class meetingsController extends baseController {
     super(meetingsModel);
   }
 
+  private withParticipantDetails(query: any) {
+    return query.populate("participants", "fullname email username");
+  }
+
   private buildUserMeetingsFilter(userId: string) {
     const normalizedUserId = mongoose.Types.ObjectId.isValid(userId)
       ? new mongoose.Types.ObjectId(userId)
@@ -31,13 +35,16 @@ class meetingsController extends baseController {
     }
 
     try {
-      const meeting = await this.model.findById(requestedId);
+      const meeting = await this.withParticipantDetails(
+        this.model.findById(requestedId),
+      );
       if (meeting) {
         return res.json(meeting);
       }
 
       const userMeetings = await this.model
         .find(this.buildUserMeetingsFilter(requestedId))
+        .populate("participants", "fullname email username")
         .sort({ date: -1 });
 
       if (userMeetings.length > 0) {
@@ -61,6 +68,7 @@ class meetingsController extends baseController {
     try {
       const meetings = await this.model
         .find(this.buildUserMeetingsFilter(userId))
+        .populate("participants", "fullname email username")
         .sort({ date: -1 });
 
       return res.json(meetings);
@@ -83,6 +91,7 @@ class meetingsController extends baseController {
           ...this.buildUserMeetingsFilter(userId),
           date: { $gte: new Date() },
         })
+        .populate("participants", "fullname email username")
         .sort({ date: 1 });
 
       return res.json(meetings);
@@ -105,6 +114,7 @@ class meetingsController extends baseController {
           ...this.buildUserMeetingsFilter(userId),
           date: { $lt: new Date() },
         })
+        .populate("participants", "fullname email username")
         .sort({ date: -1 });
 
       return res.json(meetings);
@@ -134,12 +144,43 @@ class meetingsController extends baseController {
             $lte: now,
           },
         })
+        .populate("participants", "fullname email username")
         .sort({ date: -1 });
 
       return res.json(meetings);
     } catch (err) {
       console.error(err);
       return res.status(500).send("Error: Can't retrieve last month's meetings");
+    }
+  }
+
+  async getThisMonthByUserId(req: AuthRequest, res: Response) {
+    const userId = req.params.userId;
+
+    if (!userId) {
+      return res.status(400).json({ error: "User ID is required" });
+    }
+
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+    try {
+      const meetings = await this.model
+        .find({
+          ...this.buildUserMeetingsFilter(userId),
+          date: {
+            $gte: startOfMonth,
+            $lt: startOfNextMonth,
+          },
+        })
+        .populate("participants", "fullname email username")
+        .sort({ date: -1 });
+
+      return res.json(meetings);
+    } catch (err) {
+      console.error(err);
+      return res.status(500).send("Error: Can't retrieve this month's meetings");
     }
   }
 
@@ -251,6 +292,17 @@ class meetingsController extends baseController {
         date: meetingDate,
         duration:
           typeof req.body.duration === "number" ? req.body.duration : undefined,
+        status:
+          req.body.status === "live" ||
+          req.body.status === "completed" ||
+          req.body.status === "upcoming"
+            ? req.body.status
+            : "upcoming",
+        summary:
+          typeof req.body.summary === "string" && req.body.summary.trim()
+            ? req.body.summary.trim()
+            : undefined,
+        endedAt: req.body.endedAt ? new Date(req.body.endedAt) : undefined,
         organizerId,
         participants: resolvedParticipantIds,
         transcriptId: req.body.transcriptId || undefined,
@@ -264,7 +316,10 @@ class meetingsController extends baseController {
         tasks: Array.isArray(req.body.tasks) ? req.body.tasks : [],
       };
 
-      const meeting = await this.model.create(payload);
+      const createdMeeting = await this.model.create(payload);
+      const meeting = await this.withParticipantDetails(
+        this.model.findById(createdMeeting._id),
+      );
       res.status(201).json(meeting);
       return;
     } catch (err) {

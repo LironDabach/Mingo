@@ -13,6 +13,18 @@ const meetingSchema = new mongoose.Schema({
   duration: {
     type: Number,
   },
+  status: {
+    type: String,
+    enum: ["upcoming", "live", "completed"],
+    default: "upcoming",
+  },
+  summary: {
+    type: String,
+    trim: true,
+  },
+  endedAt: {
+    type: Date,
+  },
   organizerId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "user",

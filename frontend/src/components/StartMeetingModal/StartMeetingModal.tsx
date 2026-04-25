@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchWithAuth, getAuthHeaders, getStoredUser, parseResponseBody } from '../../lib/auth';
+import { fetchWithAuth, getStoredUser, parseResponseBody } from '../../lib/auth';
 import './StartMeetingModal.css';
 
 interface StartMeetingModalProps {
@@ -153,6 +153,28 @@ const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
       return;
     }
 
+    const pendingEmail = emailInput.trim().toLowerCase();
+    const attendeeEmails = [
+      ...attendees.map((attendee) => attendee.email),
+      ...(pendingEmail && !attendees.some((attendee) => attendee.email === pendingEmail)
+        ? [pendingEmail]
+        : []),
+    ];
+    const attendeesForDraft = [
+      ...attendees,
+      ...(pendingEmail && !attendees.some((attendee) => attendee.email === pendingEmail)
+        ? [
+            {
+              email: pendingEmail,
+              displayName: pendingEmail,
+              isRegistered: Boolean(
+                availableUsers.some((user) => user.email.toLowerCase() === pendingEmail),
+              ),
+            },
+          ]
+        : []),
+    ];
+
     if (hasActiveMeeting) {
       setError('A live meeting is already active. Return to it before creating another one.');
       return;
@@ -163,7 +185,12 @@ const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
       return;
     }
 
-    if (attendees.length === 0) {
+    if (pendingEmail && !emailPattern.test(pendingEmail)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
+    if (attendeeEmails.length === 0) {
       setError('Please add at least one attendee before creating the meeting.');
       return;
     }
@@ -172,13 +199,13 @@ const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
     setError('');
 
     try {
-      const response = await fetch('/api/meetings/meetings', {
+      const response = await fetchWithAuth('/api/meetings/meetings', {
         method: 'POST',
-        headers: getAuthHeaders(),
         body: JSON.stringify({
           title: repository.trim() ? `${repository.trim()} Live Meeting` : 'Live Meeting',
           gitHubRepoName: repository.trim(),
-          attendeeEmails: attendees.map((attendee) => attendee.email),
+          attendeeEmails,
+          status: 'live',
         }),
       });
 
@@ -196,7 +223,7 @@ const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
           title: meeting.title,
           date: meeting.date,
           gitHubRepoName: repository.trim(),
-          attendees,
+          attendees: attendeesForDraft,
         }),
       );
       onClose();
@@ -294,7 +321,7 @@ const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
           className="modal-create-btn"
           type="button"
           onClick={handleCreateMeeting}
-          disabled={isSubmitting || !repository.trim() || attendees.length === 0}
+          disabled={isSubmitting || !repository.trim() || (attendees.length === 0 && !emailInput.trim())}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="12" y1="5" x2="12" y2="19" />

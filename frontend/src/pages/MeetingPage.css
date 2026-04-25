@@ -197,7 +197,7 @@
   padding: 16px;
   border: 1px solid #e5eef8;
   border-radius: 16px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  background: #ffffff;
 }
 
 .meeting-summary__fact {
@@ -214,19 +214,19 @@
 }
 
 .meeting-summary__fact:nth-child(1) {
-  background: linear-gradient(180deg, #ffffff 0%, #eff6ff 100%);
+  background: #f8fafc;
 }
 
 .meeting-summary__fact:nth-child(2) {
-  background: linear-gradient(180deg, #ffffff 0%, #eef2ff 100%);
+  background: #f8fafc;
 }
 
 .meeting-summary__fact:nth-child(3) {
-  background: linear-gradient(180deg, #ffffff 0%, #ecfeff 100%);
+  background: #f8fafc;
 }
 
 .meeting-summary__fact:nth-child(4) {
-  background: linear-gradient(180deg, #ffffff 0%, #fef9c3 100%);
+  background: #f8fafc;
 }
 
 .meeting-summary__fact span,

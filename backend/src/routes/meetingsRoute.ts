@@ -202,6 +202,32 @@ router.get("/meetings/:userId/last-month", authenticate, meetingsController.getL
 
 /**
  * @openapi
+ * /api/meetings/meetings/{userId}/this-month:
+ *   get:
+ *     tags: [Meetings]
+ *     summary: Get meetings from the current calendar month for a user
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       '200':
+ *         description: Meetings from this month
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Meeting'
+ */
+router.get("/meetings/:userId/this-month", authenticate, meetingsController.getThisMonthByUserId.bind(meetingsController));
+
+/**
+ * @openapi
  * /api/meetings/meetings/{userId}/average-duration:
  *   get:
  *     tags: [Meetings]
