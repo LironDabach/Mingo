@@ -4,7 +4,7 @@ import User from "../models/usersModel";
 import { AuthRequest } from "../middleware/authMiddleware";
 
 const userProjection =
-  "-password -refreshTokens -githubAccessToken -githubTokenType -githubTokenScope";
+  "-password -refreshTokens -githubAccessToken -githubTokenType -githubTokenScope -googleAccessToken -googleTokenScope";
 const toSafeUserObject = (user: any) => {
   const userObj = user?.toObject ? user.toObject() : { ...user };
   delete userObj.password;
@@ -12,6 +12,8 @@ const toSafeUserObject = (user: any) => {
   delete userObj.githubAccessToken;
   delete userObj.githubTokenType;
   delete userObj.githubTokenScope;
+  delete userObj.googleAccessToken;
+  delete userObj.googleTokenScope;
   return userObj;
 };
 

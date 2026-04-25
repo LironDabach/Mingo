@@ -141,8 +141,10 @@ const LoginPage = () => {
 
     const tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: oauthConfig.googleClientId,
-      scope: 'openid email profile',
-      callback: async (tokenResponse: { access_token?: string; error?: string }) => {
+      scope: 'openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send',
+      prompt: 'consent',
+      include_granted_scopes: true,
+      callback: async (tokenResponse: { access_token?: string; error?: string; scope?: string }) => {
         if (tokenResponse.error || !tokenResponse.access_token) {
           setError('Google sign-in failed. Please try again.');
           setIsGoogleSubmitting(false);
@@ -157,6 +159,7 @@ const LoginPage = () => {
             },
             body: JSON.stringify({
               accessToken: tokenResponse.access_token,
+              scope: tokenResponse.scope || 'openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send',
             }),
           });
 
@@ -209,7 +212,7 @@ const LoginPage = () => {
     const params = new URLSearchParams({
       client_id: oauthConfig.githubClientId,
       redirect_uri: oauthConfig.githubCallbackUrl,
-      scope: 'read:user user:email',
+      scope: 'read:user user:email repo read:project read:org',
     });
 
     window.location.href = `https://github.com/login/oauth/authorize?${params.toString()}`;

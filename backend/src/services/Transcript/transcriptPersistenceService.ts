@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import meetingsModel from "../../models/meetingsModel";
 import transcriptModel from "../../models/transcriptModel";
+import usersModel from "../../models/usersModel";
 import { TranscriptProcessingError } from "./transcribeMP3Service";
 
 type CreateMeetingTranscriptInput = {
@@ -8,6 +9,8 @@ type CreateMeetingTranscriptInput = {
   content: string;
   title?: string | undefined;
   date?: string | Date | undefined;
+  gitHubRepoName?: string | undefined;
+  attendeeEmails?: string[] | undefined;
 };
 
 const parseMeetingDate = (value?: string | Date) => {
@@ -44,10 +47,28 @@ const createMeetingTranscript = async ({
   content,
   title,
   date,
+  gitHubRepoName,
+  attendeeEmails = [],
 }: CreateMeetingTranscriptInput) => {
   const meetingDate = parseMeetingDate(date);
   const transcriptContent = normalizeTranscriptContent(content);
   const meetingId = new mongoose.Types.ObjectId();
+  const normalizedEmails = attendeeEmails
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  const registeredUsers = normalizedEmails.length
+    ? await usersModel.find({ email: { $in: normalizedEmails } }, "_id email")
+    : [];
+  const registeredEmails = new Set(
+    registeredUsers
+      .map((user) => user.email?.toLowerCase?.())
+      .filter((email): email is string => Boolean(email)),
+  );
+  const inviteEmails = normalizedEmails.filter((email) => !registeredEmails.has(email));
+  const participantIds = [
+    organizerId,
+    ...registeredUsers.map((user) => user._id.toString()),
+  ].filter((value, index, array) => array.indexOf(value) === index);
 
   const transcript = await transcriptModel.create({
     meetingID: meetingId,
@@ -56,14 +77,22 @@ const createMeetingTranscript = async ({
   });
 
   try {
-    const meeting = await meetingsModel.create({
+    const meetingPayload: Record<string, unknown> = {
       _id: meetingId,
       title: buildMeetingTitle(title),
       date: meetingDate,
+      status: "completed",
       organizerId,
-      participants: [organizerId],
+      participants: participantIds,
       transcriptId: transcript._id,
-    });
+      inviteEmails,
+      endedAt: new Date(),
+    };
+    if (gitHubRepoName?.trim()) {
+      meetingPayload.gitHubRepoName = gitHubRepoName.trim();
+    }
+
+    const meeting = await meetingsModel.create(meetingPayload);
 
     return {
       meeting,

@@ -46,6 +46,10 @@ const meetingSchema = new mongoose.Schema({
     required: false,
     trim: true,
   },
+  googleCalendarEventId: {
+    type: String,
+    required: false,
+  },
   inviteEmails: [
     {
       type: String,

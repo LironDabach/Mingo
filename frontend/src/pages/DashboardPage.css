@@ -193,6 +193,14 @@
 
 .dashboard-section--wide {
   margin-top: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.dashboard-section--wide .section-header {
+  padding: 18px 16px;
+  margin-bottom: 0;
+  border-bottom: 1px solid #bfdbfe;
 }
 
 .section-header {
@@ -397,54 +405,101 @@
 .recent-item {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  background: #f9fafb;
+  gap: 28px;
+  min-height: 82px;
+  padding: 18px 34px;
+  border-bottom: 1px solid #e5edf8;
+  background: #fff;
   transition: background 0.15s;
 }
 
 .recent-item:hover {
-  background: #f0f4fa;
+  background: #f8fbff;
 }
 
-.recent-color {
-  width: 6px;
-  height: 36px;
-  border-radius: 3px;
+.recent-item:last-child {
+  border-bottom: none;
+}
+
+.recent-calendar-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #fff8df;
+  color: #d99a00;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+}
+
+.recent-calendar-icon svg {
+  width: 22px;
+  height: 22px;
 }
 
 .recent-info {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 9px;
+  min-width: 0;
 }
 
 .recent-title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   color: #111827;
 }
 
 .recent-meta {
+  display: flex;
+  align-items: center;
+  gap: 11px;
   font-size: 12px;
-  color: #9ca3af;
+  color: #587093;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.recent-bullets {
+.recent-meta i {
+  width: 1px;
+  height: 16px;
+  background: #9fb0c9;
   flex-shrink: 0;
 }
 
-.bullet-badge {
+.recent-stats {
+  width: 92px;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  flex-shrink: 0;
   font-size: 12px;
-  font-weight: 600;
-  color: #fff;
-  padding: 4px 10px;
-  border-radius: 10px;
+  color: #587093;
 }
 
+.recent-stats span {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.recent-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.recent-dot--topics {
+  background: #0b83f6;
+}
+
+.recent-dot--tasks {
+  background: #a855f7;
+}
 /* Responsive */
 @media (max-width: 900px) {
   .dashboard-actions {
@@ -459,6 +514,11 @@
     grid-template-columns: 1fr;
   }
 
+  .recent-item {
+    gap: 16px;
+    padding: 16px 18px;
+  }
+
   .dashboard-main {
     padding: 20px 16px 32px;
   }
@@ -467,5 +527,16 @@
 @media (max-width: 600px) {
   .dashboard-stats {
     grid-template-columns: 1fr;
+  }
+
+  .recent-item {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .recent-stats {
+    width: 100%;
+    flex-direction: row;
+    padding-left: 60px;
   }
 }

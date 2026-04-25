@@ -42,6 +42,12 @@ class transcriptController extends baseController {
         organizerId: req.user._id,
         title: req.body?.title,
         date: req.body?.date,
+        gitHubRepoName: req.body?.gitHubRepoName,
+        attendeeEmails: Array.isArray(req.body?.attendeeEmails)
+          ? req.body.attendeeEmails
+          : typeof req.body?.attendeeEmails === "string"
+            ? req.body.attendeeEmails.split(",")
+            : [],
       });
 
       return res.status(201).json(result);

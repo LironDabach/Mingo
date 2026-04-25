@@ -34,6 +34,7 @@ const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
   const navigate = useNavigate();
   const currentUser = getStoredUser();
   const hasActiveMeeting = Boolean(localStorage.getItem('currentMeetingId'));
+  const [title, setTitle] = useState('');
   const [emailInput, setEmailInput] = useState('');
   const [attendees, setAttendees] = useState<AttendeeEntry[]>([]);
   const [repository, setRepository] = useState('');
@@ -185,6 +186,11 @@ const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
       return;
     }
 
+    if (!title.trim()) {
+      setError('Please enter a meeting title.');
+      return;
+    }
+
     if (pendingEmail && !emailPattern.test(pendingEmail)) {
       setError('Please enter a valid email address.');
       return;
@@ -202,7 +208,7 @@ const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
       const response = await fetchWithAuth('/api/meetings/meetings', {
         method: 'POST',
         body: JSON.stringify({
-          title: repository.trim() ? `${repository.trim()} Live Meeting` : 'Live Meeting',
+          title: title.trim(),
           gitHubRepoName: repository.trim(),
           attendeeEmails,
           status: 'live',
@@ -229,7 +235,12 @@ const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
       onClose();
       navigate('/meetings/live');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to start meeting right now.');
+      const message = err instanceof Error ? err.message : 'Unable to start meeting right now.';
+      setError(
+        message.includes('Google Calendar')
+          ? `${message} Open Settings and click Re-sync Google account.`
+          : message,
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -249,6 +260,20 @@ const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
 
         <div className="start-meeting-grid">
           <div className="start-meeting-column">
+            <div className="start-meeting-field">
+              <h3 className="modal-column-title">Title</h3>
+              <input
+                className="start-meeting-repository"
+                type="text"
+                placeholder="Meeting title"
+                value={title}
+                onChange={(event) => {
+                  setTitle(event.target.value);
+                  setError('');
+                }}
+              />
+            </div>
+
             <div className="start-meeting-field">
               <h3 className="modal-column-title">GitHub Repository</h3>
               <select
@@ -321,7 +346,7 @@ const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
           className="modal-create-btn"
           type="button"
           onClick={handleCreateMeeting}
-          disabled={isSubmitting || !repository.trim() || (attendees.length === 0 && !emailInput.trim())}
+          disabled={isSubmitting || !title.trim() || !repository.trim() || (attendees.length === 0 && !emailInput.trim())}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="12" y1="5" x2="12" y2="19" />

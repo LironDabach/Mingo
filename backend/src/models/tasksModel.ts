@@ -1,22 +1,61 @@
 import mongoose from "mongoose";
 
 const taskSchema = new mongoose.Schema({
+  title: {
+    type: String,
+    trim: true,
+  },
+
+  description: {
+    type: String,
+    trim: true,
+  },
+
+  assigneeId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "user",
+    required: false,
+  },
+
+  assigneeName: {
+    type: String,
+    trim: true,
+  },
+
+  dueDate: {
+    type: Date,
+  },
+
+  priority: {
+    type: String,
+    enum: ["High", "Medium", "Low"],
+    default: "Medium",
+  },
+
+  status: {
+    type: String,
+    enum: ["To Do", "In Progress", "Done"],
+    default: "To Do",
+  },
+
   gitHubIssueId: {
     type: Number,
-    required: true,
+    required: false,
     unique: true,
+    sparse: true,
   },
 
   gitHubRepoName: {
     type: String,
-    required: true,
+    required: false,
+    trim: true,
   },
 
   gitHubRepoOwner: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "user",
-    required: true,
+    required: false,
   },
-});
+}, { timestamps: true });
 
 export default mongoose.model("task", taskSchema);

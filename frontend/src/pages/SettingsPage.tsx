@@ -287,8 +287,10 @@ const SettingsPage = () => {
 
     const tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: oauthConfig.googleClientId,
-      scope: 'openid email profile',
-      callback: async (tokenResponse: { access_token?: string; error?: string }) => {
+      scope: 'openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send',
+      prompt: 'consent',
+      include_granted_scopes: true,
+      callback: async (tokenResponse: { access_token?: string; error?: string; scope?: string }) => {
         if (tokenResponse.error || !tokenResponse.access_token) {
           setError('Google sync failed. Please try again.');
           setIsGoogleSyncing(false);
@@ -301,6 +303,7 @@ const SettingsPage = () => {
             headers: getAuthHeaders(),
             body: JSON.stringify({
               accessToken: tokenResponse.access_token,
+              scope: tokenResponse.scope || 'openid email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send',
             }),
           });
 
@@ -351,7 +354,7 @@ const SettingsPage = () => {
     const params = new URLSearchParams({
       client_id: oauthConfig.githubClientId,
       redirect_uri: oauthConfig.githubCallbackUrl,
-      scope: 'read:user user:email repo',
+      scope: 'read:user user:email repo read:project read:org',
     });
 
     window.location.href = `https://github.com/login/oauth/authorize?${params.toString()}`;
@@ -492,13 +495,15 @@ const SettingsPage = () => {
                 type="button"
                 className="settings-sync settings-sync--google"
                 onClick={handleGoogleSync}
-                disabled={connectedGoogle || isGoogleSyncing || isGoogleDisconnecting}
+                disabled={isGoogleSyncing || isGoogleDisconnecting}
               >
                 <img src={GOOGLE_ICON} alt="Google" />
                 <span>
                   {isGoogleSyncing
                     ? 'Syncing Google account...'
-                    : 'Sync Google account'}
+                    : connectedGoogle
+                      ? 'Re-sync Google account'
+                      : 'Sync Google account'}
                 </span>
               </button>
 
