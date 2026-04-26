@@ -3,10 +3,9 @@ import Header from '../components/Header/Header';
 import { fetchWithAuth, getStoredUser, parseResponseBody } from '../lib/auth';
 import './TasksPage.css';
 
-type TaskPriority = 'High' | 'Medium' | 'Low';
-type TaskStatus = 'To Do' | 'In Progress' | 'Done';
+type TaskStatus = 'To Do' | 'Done';
 type FilterTab = 'All' | TaskStatus;
-type SortKey = 'priority' | 'due' | 'assignee' | 'status';
+type SortKey = 'due' | 'assignee' | 'status';
 
 type UserOption = {
   _id: string;
@@ -29,8 +28,7 @@ type RawTask = {
   assigneeId?: UserOption | string;
   assigneeName?: string;
   dueDate?: string;
-  priority?: TaskPriority;
-  status?: TaskStatus;
+  status?: string;
   gitHubIssueId?: number;
   gitHubRepoName?: string;
   source?: 'github' | 'local';
@@ -40,15 +38,12 @@ type RawTask = {
   meeting?: MeetingOption | null;
 };
 
-type GitHubProject = {
-  id: string;
-  title: string;
-  number: number;
+type GitHubRepo = {
+  id: number;
+  name: string;
+  fullName: string;
   owner: string;
-  ownerType?: 'users' | 'orgs';
-  url: string;
-  taskCount?: number;
-  updatedAt?: string | null;
+  private: boolean;
 };
 
 type Task = {
@@ -60,7 +55,6 @@ type Task = {
   assignee: string;
   due: string;
   dueSort: number;
-  priority: TaskPriority;
   tag: string;
   status: TaskStatus;
   source: 'github' | 'local';
@@ -69,9 +63,8 @@ type Task = {
   htmlUrl?: string;
 };
 
-const PRIORITY_ORDER: Record<TaskPriority, number> = { High: 0, Medium: 1, Low: 2 };
-const STATUS_ORDER: Record<TaskStatus, number> = { 'To Do': 0, 'In Progress': 1, Done: 2 };
-const tabs: FilterTab[] = ['All', 'To Do', 'In Progress', 'Done'];
+const STATUS_ORDER: Record<TaskStatus, number> = { 'To Do': 0, Done: 1 };
+const tabs: FilterTab[] = ['All', 'To Do', 'Done'];
 
 const getUserLabel = (user?: UserOption | null) =>
   user?.fullname || user?.username || user?.email || 'Unassigned';
@@ -81,12 +74,12 @@ const getAssigneeId = (assignee?: UserOption | string) =>
 
 const formatDueDate = (value?: string) => {
   if (!value) {
-    return 'No due date';
+    return '';
   }
 
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
-    return 'No due date';
+    return '';
   }
 
   return new Intl.DateTimeFormat('en-GB', {
@@ -116,9 +109,8 @@ const normalizeTask = (task: RawTask): Task => {
     assignee: assigneeLabel,
     due: formatDueDate(task.dueDate),
     dueSort: Number.isNaN(dueTime) ? Number.POSITIVE_INFINITY : dueTime,
-    priority: task.priority || 'Medium',
     tag: issueTag,
-    status: task.status || 'To Do',
+    status: task.status === 'Done' ? 'Done' : 'To Do',
     source: task.source === 'github' ? 'github' : 'local',
     ...(task.sourceType ? { sourceType: task.sourceType } : {}),
     ...(task.projectTitle ? { projectTitle: task.projectTitle } : {}),
@@ -131,55 +123,54 @@ const TasksPage = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<FilterTab>('All');
-  const [sortBy, setSortBy] = useState<SortKey>('priority');
-  const [priorityFilter, setPriorityFilter] = useState<'All' | TaskPriority>('All');
+  const [sortBy, setSortBy] = useState<SortKey>('due');
   const [assigneeFilter, setAssigneeFilter] = useState('All');
-  const [projects, setProjects] = useState<GitHubProject[]>([]);
-  const [selectedProjectUrl, setSelectedProjectUrl] = useState('');
+  const [repos, setRepos] = useState<GitHubRepo[]>([]);
+  const [selectedRepoName, setSelectedRepoName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
+  const [isLoadingRepos, setIsLoadingRepos] = useState(true);
   const [error, setError] = useState('');
-  const [projectError, setProjectError] = useState('');
+  const [repoError, setRepoError] = useState('');
 
-  const loadProjects = async () => {
+  const loadRepos = async () => {
     if (!currentUser?._id) {
-      setProjects([]);
-      setSelectedProjectUrl('');
-      setIsLoadingProjects(false);
+      setRepos([]);
+      setSelectedRepoName('');
+      setIsLoadingRepos(false);
       return;
     }
 
     try {
-      setIsLoadingProjects(true);
-      setProjectError('');
-      const response = await fetchWithAuth('/api/auth/github/projects');
+      setIsLoadingRepos(true);
+      setRepoError('');
+      const response = await fetchWithAuth('/api/auth/github/repos');
 
       if (!response.ok) {
         const body = await parseResponseBody(response);
         const message =
           body && typeof body === 'object' && 'message' in body && typeof body.message === 'string'
             ? body.message
-            : 'Unable to load GitHub projects.';
+            : 'Unable to load GitHub repositories.';
         throw new Error(message);
       }
 
-      const data = (await response.json()) as GitHubProject[];
-      const nextProjects = Array.isArray(data) ? data.filter((project) => project.url) : [];
-      setProjects(nextProjects);
-      setSelectedProjectUrl((current) =>
-        current && nextProjects.some((project) => project.url === current) ? current : '',
+      const data = (await response.json()) as GitHubRepo[];
+      const nextRepos = Array.isArray(data) ? data.filter((repo) => repo.fullName) : [];
+      setRepos(nextRepos);
+      setSelectedRepoName((current) =>
+        current && nextRepos.some((repo) => repo.fullName === current) ? current : '',
       );
     } catch (err) {
-      setProjects([]);
-      setSelectedProjectUrl('');
-      setProjectError(err instanceof Error ? err.message : 'Unable to load GitHub projects.');
+      setRepos([]);
+      setSelectedRepoName('');
+      setRepoError(err instanceof Error ? err.message : 'Unable to load GitHub repositories.');
     } finally {
-      setIsLoadingProjects(false);
+      setIsLoadingRepos(false);
     }
   };
 
-  const loadTasks = async (projectUrl = selectedProjectUrl) => {
-    if (!currentUser?._id || !projectUrl) {
+  const loadTasks = async (repoName = selectedRepoName) => {
+    if (!currentUser?._id) {
       setTasks([]);
       setIsLoading(false);
       return;
@@ -189,7 +180,9 @@ const TasksPage = () => {
       setIsLoading(true);
       setError('');
       const params = new URLSearchParams();
-      params.set('project', projectUrl);
+      if (repoName) {
+        params.set('repo', repoName);
+      }
       const query = params.toString() ? `?${params.toString()}` : '';
       const response = await fetchWithAuth(`/api/users/${currentUser._id}/tasks${query}`);
 
@@ -212,12 +205,12 @@ const TasksPage = () => {
   };
 
   useEffect(() => {
-    void loadProjects();
+    void loadRepos();
   }, [currentUser?._id]);
 
   useEffect(() => {
-    void loadTasks(selectedProjectUrl);
-  }, [currentUser?._id, selectedProjectUrl]);
+    void loadTasks(selectedRepoName);
+  }, [currentUser?._id, selectedRepoName]);
 
   const assignees = useMemo(() => {
     const set = new Set(tasks.map((task) => task.assignee));
@@ -229,10 +222,6 @@ const TasksPage = () => {
 
     if (activeTab !== 'All') {
       result = result.filter((task) => task.status === activeTab);
-    }
-
-    if (priorityFilter !== 'All') {
-      result = result.filter((task) => task.priority === priorityFilter);
     }
 
     if (assigneeFilter !== 'All') {
@@ -251,7 +240,6 @@ const TasksPage = () => {
     }
 
     result.sort((left, right) => {
-      if (sortBy === 'priority') return PRIORITY_ORDER[left.priority] - PRIORITY_ORDER[right.priority];
       if (sortBy === 'due') return left.dueSort - right.dueSort;
       if (sortBy === 'assignee') return left.assignee.localeCompare(right.assignee);
       if (sortBy === 'status') return STATUS_ORDER[left.status] - STATUS_ORDER[right.status];
@@ -259,19 +247,17 @@ const TasksPage = () => {
     });
 
     return result;
-  }, [tasks, activeTab, search, sortBy, priorityFilter, assigneeFilter]);
+  }, [tasks, activeTab, search, sortBy, assigneeFilter]);
 
   const stats = useMemo(() => ({
     total: tasks.length,
     todo: tasks.filter((task) => task.status === 'To Do').length,
-    inProgress: tasks.filter((task) => task.status === 'In Progress').length,
     done: tasks.filter((task) => task.status === 'Done').length,
-    highPriority: tasks.filter((task) => task.priority === 'High' && task.status !== 'Done').length,
   }), [tasks]);
 
   const updateTaskStatus = async (task: Task, nextStatus: TaskStatus) => {
     if (task.source === 'github') {
-      setError('GitHub tasks are synced from GitHub. Update their status in GitHub Projects or Issues.');
+      setError('GitHub tasks are synced from GitHub. Update their status in GitHub Issues.');
       return;
     }
 
@@ -298,10 +284,6 @@ const TasksPage = () => {
       setTasks(previousTasks);
       setError(err instanceof Error ? err.message : 'Unable to update task status.');
     }
-  };
-
-  const toggleDone = (task: Task) => {
-    void updateTaskStatus(task, task.status === 'Done' ? 'To Do' : 'Done');
   };
 
   const handleDeleteTask = async (task: Task) => {
@@ -355,15 +337,6 @@ const TasksPage = () => {
             <span className="stat-number">{isLoading ? '...' : stats.todo}</span>
             <span className="stat-label">To Do</span>
           </div>
-          <div className="tasks-stat-card" onClick={() => setActiveTab('In Progress')}>
-            <div className="stat-icon stat-icon--progress">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="4" fill="currentColor" />
-              </svg>
-            </div>
-            <span className="stat-number">{isLoading ? '...' : stats.inProgress}</span>
-            <span className="stat-label">In Progress</span>
-          </div>
           <div className="tasks-stat-card" onClick={() => setActiveTab('Done')}>
             <div className="stat-icon stat-icon--done">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -373,44 +346,35 @@ const TasksPage = () => {
             <span className="stat-number">{isLoading ? '...' : stats.done}</span>
             <span className="stat-label">Done</span>
           </div>
-          <div className="tasks-stat-card" onClick={() => { setActiveTab('All'); setPriorityFilter('High'); }}>
-            <div className="stat-icon stat-icon--high">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-            </div>
-            <span className="stat-number">{isLoading ? '...' : stats.highPriority}</span>
-            <span className="stat-label">High Priority</span>
-          </div>
         </div>
 
         <div className="tasks-sync-note">
           <div>
             <strong>Synced from GitHub</strong>
-            <span>Choose a GitHub Project and Mingo will pull the tasks from that project.</span>
+            <span>Choose a repository and Mingo will pull every issue from that repository.</span>
           </div>
           <div className="tasks-sync-controls">
             <select
-              value={selectedProjectUrl}
-              onChange={(event) => setSelectedProjectUrl(event.target.value)}
-              disabled={isLoadingProjects}
+              value={selectedRepoName}
+              onChange={(event) => setSelectedRepoName(event.target.value)}
+              disabled={isLoadingRepos}
             >
               <option value="">
-                {isLoadingProjects ? 'Loading GitHub Projects...' : 'Select GitHub Project'}
+                {isLoadingRepos ? 'Loading repositories...' : 'Repos from my meetings'}
               </option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.url}>
-                  {project.title} #{project.number}
+              {repos.map((repo) => (
+                <option key={repo.id} value={repo.fullName}>
+                  {repo.fullName}
                 </option>
               ))}
             </select>
-            <button type="button" onClick={() => void loadTasks()} disabled={isLoading || !selectedProjectUrl}>
-              {isLoading ? 'Syncing...' : 'Sync now'}
+            <button type="button" onClick={() => void loadTasks()} disabled={isLoading}>
+              {isLoading ? 'Refreshing...' : 'Refresh'}
             </button>
           </div>
         </div>
 
-        {projectError && <p className="tasks-error">{projectError}</p>}
+        {repoError && <p className="tasks-error">{repoError}</p>}
         {error && <p className="tasks-error">{error}</p>}
 
         <div className="tasks-toolbar">
@@ -444,7 +408,7 @@ const TasksPage = () => {
                 {tab}
                 {tab !== 'All' && (
                   <span className="filter-tab-count">
-                    {tab === 'To Do' ? stats.todo : tab === 'In Progress' ? stats.inProgress : stats.done}
+                    {tab === 'To Do' ? stats.todo : stats.done}
                   </span>
                 )}
               </button>
@@ -453,15 +417,6 @@ const TasksPage = () => {
         </div>
 
         <div className="tasks-filters-row">
-          <div className="filter-dropdown">
-            <label>Priority</label>
-            <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value as typeof priorityFilter)}>
-              <option value="All">All Priorities</option>
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
-            </select>
-          </div>
           <div className="filter-dropdown">
             <label>Assignee</label>
             <select value={assigneeFilter} onChange={(event) => setAssigneeFilter(event.target.value)}>
@@ -473,17 +428,16 @@ const TasksPage = () => {
           <div className="filter-dropdown">
             <label>Sort by</label>
             <select value={sortBy} onChange={(event) => setSortBy(event.target.value as SortKey)}>
-              <option value="priority">Priority</option>
               <option value="due">Due Date</option>
               <option value="assignee">Assignee</option>
               <option value="status">Status</option>
             </select>
           </div>
-          {(priorityFilter !== 'All' || assigneeFilter !== 'All' || activeTab !== 'All') && (
+          {(assigneeFilter !== 'All' || activeTab !== 'All') && (
             <button
               type="button"
               className="clear-filters-btn"
-              onClick={() => { setPriorityFilter('All'); setAssigneeFilter('All'); setActiveTab('All'); }}
+              onClick={() => { setAssigneeFilter('All'); setActiveTab('All'); }}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -505,27 +459,16 @@ const TasksPage = () => {
                 <circle cx="12" cy="12" r="10" /><line x1="8" y1="15" x2="16" y2="15" /><line x1="9" y1="9" x2="9.01" y2="9" /><line x1="15" y1="9" x2="15.01" y2="9" />
               </svg>
               <p>
-                {selectedProjectUrl
-                  ? 'No GitHub tasks were found for this project.'
-                  : 'Choose a GitHub Project and sync tasks.'}
+                {selectedRepoName
+                  ? 'No GitHub issues were found for this repository.'
+                  : 'No GitHub issues were found for your meeting repositories.'}
               </p>
             </div>
           ) : (
             <div className="tasks-list">
               {filtered.map((task) => (
                 <div key={task.id} className={`task-row ${task.status === 'Done' ? 'task-row--done' : ''}`}>
-                  <button
-                    type="button"
-                    className={`task-checkbox ${task.status === 'Done' ? 'task-checkbox--done' : ''}`}
-                    onClick={() => toggleDone(task)}
-                    aria-label={task.status === 'Done' ? 'Mark task as open' : 'Mark task as done'}
-                  >
-                    {task.status === 'Done' && (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                    )}
-                  </button>
-
-                  <span className={`task-status-dot task-status-dot--${task.status === 'Done' ? 'done' : task.status === 'In Progress' ? 'progress' : 'todo'}`}>
+                  <span className={`task-status-dot task-status-dot--${task.status === 'Done' ? 'done' : 'todo'}`}>
                     {task.status === 'Done' && (
                       <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                     )}
@@ -537,8 +480,12 @@ const TasksPage = () => {
                       {task.meeting}
                       <span className="meta-sep">|</span>
                       {task.assignee}
-                      <span className="meta-sep">|</span>
-                      Due to {task.due}
+                      {task.due && (
+                        <>
+                          <span className="meta-sep">|</span>
+                          Due to {task.due}
+                        </>
+                      )}
                       {task.projectTitle && (
                         <>
                           <span className="meta-sep">|</span>
@@ -556,7 +503,6 @@ const TasksPage = () => {
                         onChange={(event) => void updateTaskStatus(task, event.target.value as TaskStatus)}
                       >
                         <option value="To Do">To Do</option>
-                        <option value="In Progress">In Progress</option>
                         <option value="Done">Done</option>
                       </select>
                     )}
@@ -565,7 +511,6 @@ const TasksPage = () => {
                         GitHub
                       </a>
                     )}
-                    <span className={`priority-badge priority-badge--${task.priority.toLowerCase()}`}>{task.priority}</span>
                     <span className="task-tag">{task.tag}</span>
                     {task.source === 'local' && (
                       <button type="button" className="task-delete-btn" onClick={() => void handleDeleteTask(task)}>

@@ -143,7 +143,7 @@ router.delete("/meetings/:meetingId/tasks/:taskId", authenticate, tasksControlle
  * /api/users/{userId}/tasks:
  *   get:
  *     tags: [Tasks]
- *     summary: Get tasks by GitHub repo owner user id
+ *     summary: Get tasks for a user from linked or selected GitHub repositories
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -152,6 +152,12 @@ router.delete("/meetings/:meetingId/tasks/:taskId", authenticate, tasksControlle
  *         required: true
  *         schema:
  *           type: string
+ *       - in: query
+ *         name: repo
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Optional repository name or owner/name to sync issues from.
  *     responses:
  *       '200':
  *         description: Tasks for the user
