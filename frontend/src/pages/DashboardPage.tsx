@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header/Header';
 import StartMeetingModal from '../components/StartMeetingModal/StartMeetingModal';
@@ -53,6 +53,12 @@ type AverageDurationResponse = {
   averageDuration?: number;
 };
 
+type DashboardUserResponse = {
+  fullname?: string;
+  username?: string;
+  email?: string;
+};
+
 type RawDashboardTask = {
   _id: string;
   title?: string;
@@ -60,10 +66,11 @@ type RawDashboardTask = {
   assigneeId?: RawParticipant | string;
   assigneeName?: string;
   dueDate?: string;
-  priority?: 'High' | 'Medium' | 'Low';
-  status?: 'To Do' | 'In Progress' | 'Done';
+  status?: 'To Do' | 'Done';
   gitHubIssueId?: number;
   gitHubRepoName?: string;
+  updatedAt?: string;
+  createdAt?: string;
   meeting?: {
     title?: string;
   } | null;
@@ -74,7 +81,9 @@ type DashboardTask = {
   title: string;
   assignee: string;
   dueDate: string;
-  priority: 'High' | 'Medium' | 'Low';
+  status: 'open' | 'closed';
+  updatedAt: string;
+  updatedSort: number;
   tag: string;
 };
 
@@ -162,16 +171,22 @@ const normalizeDashboardMeeting = (meeting: RawMeeting, index = 0): DashboardMee
 const formatStatNumber = (value: number | null) => (value === null ? '...' : String(value));
 
 const formatAverageDuration = (value: number | null) =>
-  value === null ? '...' : String(Math.round(value));
+  value === null ? '...' : `${Math.round(value)} ${Math.round(value) === 1 ? 'Minute' : 'Minutes'}`;
+
+const getFirstName = (user?: DashboardUserResponse | null) => {
+  const rawName = user?.fullname || user?.username || user?.email || '';
+  const firstName = rawName.trim().split(/\s+/)[0];
+  return firstName || 'there';
+};
 
 const formatTaskDueDate = (value?: string) => {
   if (!value) {
-    return 'No due date';
+    return '';
   }
 
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
-    return 'No due date';
+    return '';
   }
 
   return new Intl.DateTimeFormat('en-GB', {
@@ -181,8 +196,32 @@ const formatTaskDueDate = (value?: string) => {
   }).format(date);
 };
 
+const formatUpdatedDate = (value?: string) => {
+  if (!value) {
+    return 'Recently updated';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return 'Recently updated';
+  }
+
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+  }).format(date);
+};
+
+const formatTaskTag = (repoName?: string, issueId?: number) => {
+  const repo = formatRepositoryTag(repoName);
+  return issueId ? `${repo} #${issueId}` : repo;
+};
+
 const normalizeDashboardTask = (task: RawDashboardTask): DashboardTask => {
   const assignee = typeof task.assigneeId === 'object' ? task.assigneeId : null;
+  const updatedValue = task.updatedAt || task.createdAt;
+  const updatedTime = updatedValue ? new Date(updatedValue).getTime() : 0;
 
   return {
     id: task._id,
@@ -198,10 +237,10 @@ const normalizeDashboardTask = (task: RawDashboardTask): DashboardTask => {
       task.meeting?.title ||
       'Unassigned',
     dueDate: formatTaskDueDate(task.dueDate),
-    priority: task.priority || 'Medium',
-    tag: task.gitHubIssueId
-      ? `${task.gitHubRepoName || 'MINGO'}-${task.gitHubIssueId}`
-      : task.gitHubRepoName || 'Manual',
+    status: task.status === 'Done' ? 'closed' : 'open',
+    updatedAt: formatUpdatedDate(updatedValue),
+    updatedSort: Number.isNaN(updatedTime) ? 0 : updatedTime,
+    tag: formatTaskTag(task.gitHubRepoName, task.gitHubIssueId),
   };
 };
 
@@ -218,6 +257,7 @@ const countUpcomingThisWeek = (meetings: DashboardMeeting[]) => {
 const DashboardPage = () => {
   const navigate = useNavigate();
   const currentUser = getStoredUser();
+  const [dashboardUser, setDashboardUser] = useState<DashboardUserResponse | null>(currentUser);
   const [showStartMeeting, setShowStartMeeting] = useState(false);
   const [showNewFutureMeeting, setShowNewFutureMeeting] = useState(false);
   const [showUploadMeeting, setShowUploadMeeting] = useState(false);
@@ -228,7 +268,7 @@ const DashboardPage = () => {
   const [meetingsThisMonth, setMeetingsThisMonth] = useState<number | null>(null);
   const [averageDuration, setAverageDuration] = useState<number | null>(null);
   const [statsError, setStatsError] = useState('');
-  const [openTasks, setOpenTasks] = useState<DashboardTask[]>([]);
+  const [recentlyUpdatedTasks, setRecentlyUpdatedTasks] = useState<DashboardTask[]>([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [tasksError, setTasksError] = useState('');
   const [recentMeetings, setRecentMeetings] = useState<DashboardMeeting[]>([]);
@@ -238,6 +278,27 @@ const DashboardPage = () => {
     Boolean(localStorage.getItem('currentMeetingId')),
   );
   const upcomingThisWeekCount = countUpcomingThisWeek(serverUpcomingMeetings);
+  const firstName = getFirstName(dashboardUser);
+
+  const loadDashboardUser = async () => {
+    if (!currentUser?._id) {
+      setDashboardUser(null);
+      return;
+    }
+
+    try {
+      const response = await fetchWithAuth(`/api/user/${currentUser._id}`);
+
+      if (!response.ok) {
+        throw new Error('Unable to load user.');
+      }
+
+      const data = (await response.json()) as DashboardUserResponse;
+      setDashboardUser(data);
+    } catch (_err) {
+      setDashboardUser(currentUser);
+    }
+  };
 
   const loadUpcomingMeetings = async () => {
     if (!currentUser?._id) {
@@ -311,7 +372,7 @@ const DashboardPage = () => {
 
   const loadOpenTasks = async () => {
     if (!currentUser?._id) {
-      setOpenTasks([]);
+      setRecentlyUpdatedTasks([]);
       return;
     }
 
@@ -327,13 +388,13 @@ const DashboardPage = () => {
       const data = (await response.json()) as RawDashboardTask[];
       const normalizedTasks = Array.isArray(data)
         ? data
-            .filter((task) => task.status !== 'Done')
             .map(normalizeDashboardTask)
+            .sort((left, right) => right.updatedSort - left.updatedSort)
             .slice(0, 4)
         : [];
-      setOpenTasks(normalizedTasks);
+      setRecentlyUpdatedTasks(normalizedTasks);
     } catch (err) {
-      setTasksError(err instanceof Error ? err.message : 'Unable to load open tasks.');
+      setTasksError(err instanceof Error ? err.message : 'Unable to load recently updated tasks.');
     } finally {
       setIsLoadingTasks(false);
     }
@@ -431,6 +492,7 @@ const DashboardPage = () => {
   }, []);
 
   useEffect(() => {
+    void loadDashboardUser();
     void loadUpcomingMeetings();
     void loadDashboardStats();
     void loadOpenTasks();
@@ -442,7 +504,7 @@ const DashboardPage = () => {
       <Header />
       <main className="dashboard-main">
         {/* Greeting */}
-        <h1 className="dashboard-greeting">Hi Natali! 👋</h1>
+        <h1 className="dashboard-greeting">Hi {firstName}! 👋</h1>
 
         {/* Action Cards */}
         <div className="dashboard-actions">
@@ -563,7 +625,24 @@ const DashboardPage = () => {
                   <div className="upcoming-info">
                     <span className="upcoming-title">{m.title}</span>
                     <span className="upcoming-meta">
-                      📅 {m.date} &nbsp; 👤 {m.participants}
+                      <span className="upcoming-meta-item">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="4" width="18" height="18" rx="2" />
+                          <line x1="16" y1="2" x2="16" y2="6" />
+                          <line x1="8" y1="2" x2="8" y2="6" />
+                          <line x1="3" y1="10" x2="21" y2="10" />
+                        </svg>
+                        {m.date}
+                      </span>
+                      <span className="upcoming-meta-item">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                          <circle cx="9" cy="7" r="4" />
+                          <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                        </svg>
+                        {m.participants}
+                      </span>
                     </span>
                   </div>
                   <button
@@ -578,35 +657,39 @@ const DashboardPage = () => {
             </div>
           </div>
 
-          {/* Open Tasks */}
+          {/* Recently Updated Tasks */}
           <div className="dashboard-section">
             <div className="section-header">
-              <h2>Open Tasks</h2>
-              {!isLoadingTasks && openTasks.length > 0 && (
+              <h2>Recently Updated</h2>
+              {!isLoadingTasks && recentlyUpdatedTasks.length > 0 && (
                 <button type="button" className="view-all" onClick={() => navigate('/tasks')}>View All</button>
               )}
             </div>
             <div className="section-list">
               {tasksError && <p className="dashboard-empty-state">{tasksError}</p>}
               {!tasksError && isLoadingTasks && (
-                <p className="dashboard-empty-state">Loading open tasks...</p>
+                <p className="dashboard-empty-state">Loading recently updated tasks...</p>
               )}
-              {!tasksError && !isLoadingTasks && openTasks.length === 0 && (
-                <p className="dashboard-empty-state">No open tasks yet.</p>
+              {!tasksError && !isLoadingTasks && recentlyUpdatedTasks.length === 0 && (
+                <p className="dashboard-empty-state">No recently updated tasks yet.</p>
               )}
-              {openTasks.map((t) => (
+              {recentlyUpdatedTasks.map((t) => (
                 <div className="task-item" key={t.id}>
-                  <div className="task-check">
-                    <span className="task-checkbox" />
-                  </div>
+                  <span className={`task-status-dot task-status-dot--${t.status}`}>
+                    {t.status === 'closed' && (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </span>
                   <div className="task-info">
                     <span className="task-title">{t.title}</span>
-                    <span className="task-meta">{t.assignee} · {t.dueDate}</span>
+                    <span className="task-meta">
+                      {t.assignee} · Updated {t.updatedAt}
+                      {t.dueDate ? ` · Due ${t.dueDate}` : ''}
+                    </span>
                   </div>
                   <div className="task-badges">
-                    <span className={`priority-badge priority-badge--${t.priority.toLowerCase()}`}>
-                      {t.priority}
-                    </span>
                     <span className="task-tag">{t.tag}</span>
                   </div>
                 </div>

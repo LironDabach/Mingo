@@ -599,21 +599,6 @@
   color: #22c55e;
 }
 
-.meeting-task__status-icon--high {
-  background: #fff1f2;
-  color: #ef4444;
-}
-
-.meeting-task__status-icon--medium {
-  background: #fffbeb;
-  color: #f59e0b;
-}
-
-.meeting-task__status-icon--low {
-  background: #eff6ff;
-  color: #64748b;
-}
-
 .meeting-task__content {
   min-width: 0;
   display: flex;
@@ -644,27 +629,11 @@
   gap: 10px;
 }
 
-.meeting-priority,
 .meeting-tag {
   padding: 5px 10px;
   border-radius: 8px;
   font-size: 12px;
   font-weight: 600;
-}
-
-.meeting-priority--high {
-  background: #ffe4e6;
-  color: #f43f5e;
-}
-
-.meeting-priority--medium {
-  background: #fef3c7;
-  color: #d97706;
-}
-
-.meeting-priority--low {
-  background: #dcfce7;
-  color: #22c55e;
 }
 
 .meeting-tag {

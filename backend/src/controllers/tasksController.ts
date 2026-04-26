@@ -86,18 +86,19 @@ class tasksController extends baseController {
     return typeof value === "string" ? value.trim().toLowerCase() : "";
   }
 
-  private resolvePriorityFromLabels(labels: Array<{ name?: string }>) {
-    const names = labels.map((label) => label.name?.toLowerCase() || "");
-
-    if (names.some((name) => name.includes("high") || name.includes("urgent"))) {
-      return "High";
+  private parseRepoQuery(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value.flatMap((entry) => this.parseRepoQuery(entry));
     }
 
-    if (names.some((name) => name.includes("low"))) {
-      return "Low";
+    if (typeof value !== "string") {
+      return [];
     }
 
-    return "Medium";
+    return value
+      .split(",")
+      .map((repoName) => repoName.trim())
+      .filter(Boolean);
   }
 
   private resolveStatusFromIssue(issue: { state?: string; labels?: Array<{ name?: string }> }) {
@@ -131,20 +132,6 @@ class tasksController extends baseController {
     }
 
     return "To Do";
-  }
-
-  private resolvePriorityFromProjectValue(value?: string) {
-    const normalized = value?.toLowerCase() || "";
-
-    if (normalized.includes("high") || normalized.includes("urgent")) {
-      return "High";
-    }
-
-    if (normalized.includes("low")) {
-      return "Low";
-    }
-
-    return "Medium";
   }
 
   private getProjectFieldValue(
@@ -214,7 +201,6 @@ class tasksController extends baseController {
   ) {
     const fieldValues = item.fieldValues?.nodes || [];
     const statusValue = this.getProjectFieldValue(fieldValues, ["Status"]);
-    const priorityValue = this.getProjectFieldValue(fieldValues, ["Priority"]);
     const dueValue = this.getProjectFieldValue(fieldValues, [
       "Due date",
       "Due Date",
@@ -242,9 +228,6 @@ class tasksController extends baseController {
       description: item.content?.body,
       assigneeName,
       dueDate: dueValue?.date || item.content?.milestone?.dueOn || undefined,
-      priority: priorityValue?.name
-        ? this.resolvePriorityFromProjectValue(priorityValue.name)
-        : this.resolvePriorityFromLabels(labels),
       status: statusValue?.name
         ? this.resolveStatusFromProjectValue(statusValue.name)
         : this.resolveStatusFromIssue({
@@ -638,13 +621,15 @@ class tasksController extends baseController {
           title: issue.title,
           assigneeName: issue.assignee?.login || "Unassigned",
           dueDate: issue.milestone?.due_on || undefined,
-          priority: this.resolvePriorityFromLabels(issue.labels || []),
           status: this.resolveStatusFromIssue(issue),
           gitHubIssueId: issue.number,
           gitHubRepoName: repo.full_name,
           gitHubRepoOwner: userId,
           source: "github",
+          sourceType: "issue",
           htmlUrl: issue.html_url,
+          createdAt: issue.created_at,
+          updatedAt: issue.updated_at,
           meeting: relatedMeeting
             ? {
                 _id: relatedMeeting._id,
@@ -657,51 +642,13 @@ class tasksController extends baseController {
       }),
     );
 
-    const projectTaskGroups = await Promise.all(
-      matchedRepos.map((repo) => {
-        const relatedMeeting = meetings.find((meeting) => {
-          const meetingRepo = this.normalizeRepoName(meeting.gitHubRepoName);
-          return (
-            meetingRepo === this.normalizeRepoName(repo.name) ||
-            meetingRepo === this.normalizeRepoName(repo.full_name)
-          );
-        });
-
-        return this.getGitHubProjectTasksForRepo(repo, authorization, relatedMeeting, userId);
-      }),
-    );
-
-    const projectTasks = projectTaskGroups.flat();
-    const projectIssueKeys = new Set(
-      projectTasks
-        .filter((task: any) => task.gitHubIssueId)
-        .map(
-          (task: any) =>
-            `${this.normalizeRepoName(task.gitHubRepoName)}#${task.gitHubIssueId}`,
-        ),
-    );
-
-    return [
-      ...projectTasks,
-      ...issueTasks.filter(
-        (task: any) =>
-          !projectIssueKeys.has(
-            `${this.normalizeRepoName(task.gitHubRepoName)}#${task.gitHubIssueId}`,
-          ),
-      ),
-    ];
+    return issueTasks;
   }
 
   private normalizeStatus(value: unknown) {
     return value === "Done" || value === "In Progress" || value === "To Do"
       ? value
       : "To Do";
-  }
-
-  private normalizePriority(value: unknown) {
-    return value === "High" || value === "Low" || value === "Medium"
-      ? value
-      : "Medium";
   }
 
   private buildTaskPayload(
@@ -727,10 +674,6 @@ class tasksController extends baseController {
           ? body.assigneeName.trim()
           : undefined,
       dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
-      priority:
-        body.priority !== undefined || includeDefaults
-          ? this.normalizePriority(body.priority)
-          : undefined,
       status:
         body.status !== undefined || includeDefaults
           ? this.normalizeStatus(body.status)
@@ -836,7 +779,7 @@ class tasksController extends baseController {
           ],
         })
         .populate("assigneeId", "fullname email username")
-        .sort({ dueDate: 1, createdAt: -1 });
+        .sort({ updatedAt: -1, createdAt: -1 });
 
       const taskIds = tasks.map((task: any) => task._id);
       const meetings = await meetingsModel
@@ -869,18 +812,27 @@ class tasksController extends baseController {
               : null,
           };
         });
+      const requestedRepoNames = this.parseRepoQuery(req.query.repo);
       const projectQuery =
         typeof req.query.project === "string" ? req.query.project : "";
       const projectRef = this.parseGitHubProjectUrl(projectQuery);
       const authorization = this.getGitHubAuthorization(await usersModel.findById(userId));
-      const githubCacheKey = `${userId}:${projectQuery || "all"}`;
+      const githubCacheKey = `${userId}:${
+        requestedRepoNames.length > 0
+          ? `repo:${requestedRepoNames.map((repoName) => this.normalizeRepoName(repoName)).join(",")}`
+          : projectQuery
+            ? `project:${projectQuery}`
+            : "repos-from-meetings"
+      }`;
       const cachedGithubTasks = githubTasksCache.get(githubCacheKey);
       let githubTasks: any[] = [];
 
       if (cachedGithubTasks && cachedGithubTasks.expiresAt > Date.now()) {
         githubTasks = cachedGithubTasks.data;
       } else {
-        githubTasks = projectRef && authorization
+        githubTasks = requestedRepoNames.length > 0
+          ? await this.getGitHubTasksForUser(userId, requestedRepoNames)
+          : projectRef && authorization
           ? await this.getGitHubProjectTasksByOwner(
               projectRef.owner,
               projectRef.number,
@@ -921,7 +873,13 @@ class tasksController extends baseController {
           },
       );
 
-      return res.json([...localTasks, ...remoteOnlyGithubTasks]);
+      return res.json(
+        [...localTasks, ...remoteOnlyGithubTasks].sort((left: any, right: any) => {
+          const leftTime = new Date(left.updatedAt || left.createdAt || 0).getTime();
+          const rightTime = new Date(right.updatedAt || right.createdAt || 0).getTime();
+          return rightTime - leftTime;
+        }),
+      );
     } catch (err) {
       console.error(err);
       return res.status(500).send("Error: Can't retrieve tasks by user ID");

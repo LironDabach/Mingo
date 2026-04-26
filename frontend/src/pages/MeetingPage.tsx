@@ -36,7 +36,6 @@ type Task = {
   title: string;
   assignee: string;
   due: string;
-  priority: 'High' | 'Medium' | 'Low';
   tag: string;
   done: boolean;
 };
@@ -65,7 +64,6 @@ const DEFAULT_TASKS: Task[] = [
     title: 'Project description',
     assignee: 'Planning owner',
     due: 'Due to 30.12.25',
-    priority: 'High',
     tag: 'MINGO-12',
     done: true,
   },
@@ -74,7 +72,6 @@ const DEFAULT_TASKS: Task[] = [
     title: 'Figma Design',
     assignee: 'Planning owner',
     due: 'Due to 30.12.25',
-    priority: 'Low',
     tag: 'MINGO-41',
     done: false,
   },
@@ -83,7 +80,6 @@ const DEFAULT_TASKS: Task[] = [
     title: 'Architecture',
     assignee: 'Planning owner',
     due: 'Due to 30.12.25',
-    priority: 'Medium',
     tag: 'MINGO-32',
     done: false,
   },
@@ -478,8 +474,8 @@ const MeetingPage = () => {
                     </button>
 
                     <div className="meeting-task__status">
-                      <span className={`meeting-task__status-icon meeting-task__status-icon--${task.done ? 'done' : task.priority.toLowerCase()}`}>
-                        {task.done ? '✓' : task.priority === 'High' ? '!' : task.priority === 'Medium' ? '◌' : '○'}
+                      <span className={`meeting-task__status-icon ${task.done ? 'meeting-task__status-icon--done' : ''}`}>
+                        {task.done ? '✓' : '○'}
                       </span>
                     </div>
 
@@ -491,9 +487,6 @@ const MeetingPage = () => {
                     </div>
 
                     <div className="meeting-task__meta">
-                      <span className={`meeting-priority meeting-priority--${task.priority.toLowerCase()}`}>
-                        {task.priority}
-                      </span>
                       <span className="meeting-tag">{task.tag}</span>
                     </div>
                   </div>

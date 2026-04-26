@@ -272,8 +272,23 @@
 }
 
 .upcoming-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   font-size: 12px;
   color: #9ca3af;
+}
+
+.upcoming-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.upcoming-meta-item svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 
 .btn-start {
@@ -315,31 +330,6 @@
   background: #f0f4fa;
 }
 
-.task-check {
-  flex-shrink: 0;
-}
-
-.task-checkbox {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  border: 2px solid #d1d5db;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #fff;
-}
-
-.task-checkbox--done {
-  background: #22c55e;
-  border-color: #22c55e;
-}
-
-.task-checkbox svg {
-  width: 14px;
-  height: 14px;
-}
-
 .task-info {
   flex: 1;
   display: flex;
@@ -369,27 +359,29 @@
   flex-shrink: 0;
 }
 
-.priority-badge {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 12px;
-  text-transform: capitalize;
+.task-status-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
-.priority-badge--low {
-  background: #fef3c7;
-  color: #d97706;
+.task-status-dot svg {
+  width: 13px;
+  height: 13px;
 }
 
-.priority-badge--medium {
-  background: #dbeafe;
-  color: #2563eb;
+.task-status-dot--open {
+  border: 2px solid #d1d5db;
+  background: #fff;
 }
 
-.priority-badge--high {
-  background: #fee2e2;
-  color: #dc2626;
+.task-status-dot--closed {
+  background: #22c55e;
+  border: none;
 }
 
 .task-tag {
