@@ -946,7 +946,7 @@ class tasksController extends baseController {
       const payload = this.buildTaskPayload(req.body);
       const updatedTask = await this.model
         .findByIdAndUpdate(taskId, payload, {
-          new: true,
+          returnDocument: 'after',
         })
         .populate("assigneeId", "fullname email username");
 

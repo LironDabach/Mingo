@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header/Header';
 import { fetchWithAuth, getStoredUser } from '../lib/auth';
 import './MeetingPage.css';
+import { useEffect } from 'react';
 
 type DraftAttendee = {
   email: string;
@@ -149,6 +150,45 @@ const MeetingPage = () => {
   const meetingDuration = '43 min';
 
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
+
+  useEffect(() => {
+    const loadChatHistory = async () => {
+      const meetingId =
+        meetingIdRef.current ||
+        parsedDraft?.id ||
+        localStorage.getItem('currentMeetingId') ||
+        '';
+
+      if (!meetingId) return;
+
+      try {
+        const response = await fetchWithAuth(
+          `/api/meetings/${meetingId}/mingoAgent`
+        );
+
+        if (!response.ok) {
+          throw new Error('Failed to load chat history');
+        }
+
+        const data = await response.json();
+
+        if (data?.messages) {
+          const backendMessages = data.messages.map((msg: any, index: number) => ({
+            id: Date.now() + index,
+            sender: msg.sender,
+            text: msg.content,
+          }));
+
+          setMessages([...INITIAL_MESSAGES, ...backendMessages]);
+        }
+      } catch (error) {
+        console.error('Failed to load chat history:', error);
+      }
+    };
+
+    loadChatHistory();
+  }, []);
+
   const [isMingoTyping, setIsMingoTyping] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [showSummary, setShowSummary] = useState(false);
@@ -190,7 +230,7 @@ const MeetingPage = () => {
     ]);
 
     setChatInput('');
-    setIsMingoTyping(true); 
+    setIsMingoTyping(true);
 
     try {
       const response = await fetchWithAuth(
@@ -227,7 +267,7 @@ const MeetingPage = () => {
         },
       ]);
     } finally {
-      setIsMingoTyping(false); 
+      setIsMingoTyping(false);
     }
   };
 
