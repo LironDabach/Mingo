@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header/Header';
 import { fetchWithAuth, getStoredUser } from '../lib/auth';
 import './MeetingPage.css';
+import { useEffect } from 'react';
 
 type DraftAttendee = {
   email: string;
@@ -149,6 +150,46 @@ const MeetingPage = () => {
   const meetingDuration = '43 min';
 
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
+
+  useEffect(() => {
+    const loadChatHistory = async () => {
+      const meetingId =
+        meetingIdRef.current ||
+        parsedDraft?.id ||
+        localStorage.getItem('currentMeetingId') ||
+        '';
+
+      if (!meetingId) return;
+
+      try {
+        const response = await fetchWithAuth(
+          `/api/meetings/${meetingId}/mingoAgent`
+        );
+
+        if (!response.ok) {
+          throw new Error('Failed to load chat history');
+        }
+
+        const data = await response.json();
+
+        if (data?.messages) {
+          const backendMessages = data.messages.map((msg: any, index: number) => ({
+            id: Date.now() + index,
+            sender: msg.sender,
+            text: msg.content,
+          }));
+
+          setMessages([...INITIAL_MESSAGES, ...backendMessages]);
+        }
+      } catch (error) {
+        console.error('Failed to load chat history:', error);
+      }
+    };
+
+    loadChatHistory();
+  }, []);
+
+  const [isMingoTyping, setIsMingoTyping] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [showSummary, setShowSummary] = useState(false);
   const [summaryText, setSummaryText] = useState('');
@@ -169,24 +210,65 @@ const MeetingPage = () => {
     openTasks.length,
   );
 
-  const handleSend = (event: FormEvent) => {
-    event.preventDefault();
-    const trimmed = chatInput.trim();
 
-    if (!trimmed) {
-      return;
-    }
+  const handleSend = async (event: FormEvent) => {
+    event.preventDefault();
+
+    const trimmed = chatInput.trim();
+    if (!trimmed) return;
+
+    const meetingId =
+      meetingIdRef.current ||
+      parsedDraft?.id ||
+      localStorage.getItem('currentMeetingId') ||
+      '';
+
 
     setMessages((prev) => [
       ...prev,
       { id: Date.now(), sender: 'user', text: trimmed },
-      {
-        id: Date.now() + 1,
-        sender: 'mingo',
-        text: 'The AI conversation area is ready here. Backend connection can be added later.',
-      },
     ]);
+
     setChatInput('');
+    setIsMingoTyping(true);
+
+    try {
+      const response = await fetchWithAuth(
+        `/api/meetings/${meetingId}/mingoAgent/generateReply`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ message: trimmed }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to get response from server');
+      }
+
+      const data = await response.json();
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now(),
+          sender: 'mingo',
+          text: data.reply || 'No response from AI',
+        },
+      ]);
+    } catch (error) {
+      console.error(error);
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now(),
+          sender: 'mingo',
+          text: 'Something went wrong. Please try again.',
+        },
+      ]);
+    } finally {
+      setIsMingoTyping(false);
+    }
   };
 
   const handleEndMeeting = async () => {
@@ -405,6 +487,20 @@ const MeetingPage = () => {
                   )}
                 </div>
               ))}
+              {isMingoTyping && (
+                <div className="meeting-message meeting-message--mingo">
+                  <div className="meeting-message__bubble meeting-message__bubble--mingo meeting-message__bubble--typing">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                  <div className="meeting-message__avatar meeting-message__avatar--mingo">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 2a8 8 0 0 0-8 8v3.6c0 .7-.3 1.3-.8 1.7L2 16.5V18h20v-1.5l-1.2-1.2c-.5-.5-.8-1.1-.8-1.7V10a8 8 0 0 0-8-8Zm-3 7h6v2H9V9Zm0 4h4v2H9v-2Z" />
+                    </svg>
+                  </div>
+                </div>
+              )}
             </div>
 
             <form className="meeting-chat-card__input" onSubmit={handleSend}>
