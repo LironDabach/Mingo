@@ -204,7 +204,6 @@ const MeetingPage = () => {
 
   useEffect(() => {
     const loadTasks = async () => {
-      console.log('loadTasks started');
 
       const meetingId =
         meetingIdRef.current ||
@@ -216,12 +215,6 @@ const MeetingPage = () => {
 
       const user = JSON.parse(localStorage.getItem('user') || '{}');
       const userId = user.id || user._id;
-
-      console.log('loadTasks params:', {
-        meetingId,
-        repo,
-        userId,
-      });
 
       if (!userId || !repo) return;
 
@@ -235,8 +228,6 @@ const MeetingPage = () => {
         }
 
         const data = await response.json();
-
-        console.log('first task full object:', (data.tasks || data || [])[0]);
 
         const backendTasks = (data.tasks || data || []).map(
           (task: any, index: number) => ({
