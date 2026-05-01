@@ -853,3 +853,17 @@
   color: #22c55e;
   font-weight: 800;
 }
+
+.meeting-task-source {
+  text-decoration: none;
+  border: 1px solid #bfdbfe;
+  border-radius: 9px;
+  padding: 7px 12px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

@@ -39,6 +39,7 @@ type Task = {
   due: string;
   tag: string;
   done: boolean;
+  htmlUrl?: string;
 };
 
 const DEFAULT_TOPICS: Topic[] = [
@@ -235,25 +236,16 @@ const MeetingPage = () => {
 
       const data = await response.json();
 
-      console.log(
-  'raw tasks statuses:',
-  (data.tasks || data || []).map((task: any) => ({
-    title: task.title || task.description,
-    status: task.status,
-    state: task.state,
-    done: task.done,
-    completed: task.completed,
-    closed: task.closed,
-  }))
-);
+      console.log('first task full object:', (data.tasks || data || [])[0]);
 
 const backendTasks = (data.tasks || data || []).map(
   (task: any, index: number) => ({
     id: task.id || task._id || Date.now() + index,
     title: task.title || task.description || 'Untitled task',
-    assignee: task.assignee || task.owner || 'Unassigned',
+    assignee: task.assignee || task.assigneeName || task.owner || 'Unassigned',
     due: task.due || task.dueDate || 'No due date',
-    tag: task.tag || task.jiraKey || `TASK-${index + 1}`,
+    tag: task.tag || task.jiraKey || `TASK-${task.gitHubIssueId || index + 1}`,
+    htmlUrl: task.htmlUrl || task.html_url || '',
     done:
       typeof task.status === 'string' &&
       task.status.toLowerCase() === 'done',
@@ -647,7 +639,16 @@ const backendTasks = (data.tasks || data || []).map(
       </div>
 
       <div className="meeting-task-row-badges">
-        <span className="meeting-task-source">GitHub</span>
+        {task.htmlUrl && (
+  <a
+    className="meeting-task-source"
+    href={task.htmlUrl}
+    target="_blank"
+    rel="noreferrer"
+  >
+    GitHub
+  </a>
+)}
         <span className="meeting-task-tag">{task.tag}</span>
       </div>
     </div>
