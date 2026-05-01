@@ -867,3 +867,7 @@
   align-items: center;
   justify-content: center;
 }
+
+.meeting-task-source:hover {
+  background: #dbeafe;
+}
