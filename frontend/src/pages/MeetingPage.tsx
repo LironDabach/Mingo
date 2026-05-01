@@ -235,21 +235,30 @@ const MeetingPage = () => {
 
       const data = await response.json();
 
-      console.log('tasks response:', data);
+      console.log(
+  'raw tasks statuses:',
+  (data.tasks || data || []).map((task: any) => ({
+    title: task.title || task.description,
+    status: task.status,
+    state: task.state,
+    done: task.done,
+    completed: task.completed,
+    closed: task.closed,
+  }))
+);
 
-      const backendTasks = (data.tasks || data || []).map(
-        (task: any, index: number) => ({
-          id: task.id || task._id || Date.now() + index,
-          title: task.title || task.description || 'Untitled task',
-          assignee: task.assignee || task.owner || 'Unassigned',
-          due: task.due || task.dueDate || 'No due date',
-          tag: task.tag || task.jiraKey || `TASK-${index + 1}`,
-          done:
-            task.done ||
-            task.status === 'done' ||
-            task.status === 'completed',
-        })
-      );
+const backendTasks = (data.tasks || data || []).map(
+  (task: any, index: number) => ({
+    id: task.id || task._id || Date.now() + index,
+    title: task.title || task.description || 'Untitled task',
+    assignee: task.assignee || task.owner || 'Unassigned',
+    due: task.due || task.dueDate || 'No due date',
+    tag: task.tag || task.jiraKey || `TASK-${index + 1}`,
+    done:
+      typeof task.status === 'string' &&
+      task.status.toLowerCase() === 'done',
+  })
+);
 
       if (backendTasks.length > 0) {
         setTasks(backendTasks);
@@ -617,45 +626,37 @@ const MeetingPage = () => {
               <div className="meeting-tasks">
 {openTasks.length > 0 ? (
   openTasks.map((task) => (
-    <div key={task.id} className="meeting-task">
+    <div key={task.id} className="meeting-task-row">
       <button
         type="button"
-        className={`meeting-task__check ${task.done ? 'meeting-task__check--done' : ''}`}
+        className="meeting-task-status-dot meeting-task-status-dot--todo"
         onClick={() => toggleTask(task.id)}
-        aria-label={task.done ? 'Mark as open' : 'Mark as done'}
-      >
-        {task.done && (
-          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-        )}
-      </button>
+        aria-label="Mark as done"
+      />
 
-      <div className="meeting-task__status">
-        <span className={`meeting-task__status-icon ${task.done ? 'meeting-task__status-icon--done' : ''}`}>
-          {task.done ? '✓' : '○'}
+      <div className="meeting-task-row-info">
+        <strong className="meeting-task-row-title">
+          {task.title}
+        </strong>
+
+        <span className="meeting-task-row-meta">
+          {task.assignee}
+          <i>|</i>
+          {task.due}
         </span>
       </div>
 
-      <div className="meeting-task__content">
-        <strong>{task.title}</strong>
-        <span>
-          {task.assignee} <i>|</i> {task.due}
-        </span>
-      </div>
-
-      <div className="meeting-task__meta">
-        <span className="meeting-tag">{task.tag}</span>
+      <div className="meeting-task-row-badges">
+        <span className="meeting-task-source">GitHub</span>
+        <span className="meeting-task-tag">{task.tag}</span>
       </div>
     </div>
   ))
 ) : (
-<div className="meeting-empty-state">
-  <div className="meeting-empty-state__icon">✓</div>
-  <div className="meeting-empty-state__text">
-    <strong>No open tasks</strong>
+  <div className="meeting-tasks-empty">
+    <span className="meeting-tasks-empty__icon">✓</span>
+    <span>No open tasks</span>
   </div>
-</div>
 )}
               </div>
             </article>
