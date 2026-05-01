@@ -236,7 +236,7 @@
   line-height: 1.6;
 }
 
-.meeting-summary__card + .meeting-summary__card {
+.meeting-summary__card+.meeting-summary__card {
   margin-top: 14px;
 }
 
@@ -510,8 +510,8 @@
   gap: 14px;
 }
 
-.meeting-topic + .meeting-topic,
-.meeting-task + .meeting-task {
+.meeting-topic+.meeting-topic,
+.meeting-task+.meeting-task {
   border-top: 1px solid #edf2f8;
 }
 
@@ -670,6 +670,7 @@
 }
 
 @keyframes meeting-typing-dot {
+
   0%,
   80%,
   100% {

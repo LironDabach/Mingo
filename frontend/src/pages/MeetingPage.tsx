@@ -202,66 +202,66 @@ const MeetingPage = () => {
   const [emailError, setEmailError] = useState('');
   const [tasks, setTasks] = useState<Task[]>([]);
 
- useEffect(() => {
-  const loadTasks = async () => {
-    console.log('loadTasks started');
+  useEffect(() => {
+    const loadTasks = async () => {
+      console.log('loadTasks started');
 
-    const meetingId =
-      meetingIdRef.current ||
-      parsedDraft?.id ||
-      localStorage.getItem('currentMeetingId') ||
-      '';
+      const meetingId =
+        meetingIdRef.current ||
+        parsedDraft?.id ||
+        localStorage.getItem('currentMeetingId') ||
+        '';
 
-    const repo = parsedDraft?.gitHubRepoName || repositoryLabel;
+      const repo = parsedDraft?.gitHubRepoName || repositoryLabel;
 
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const userId = user.id || user._id;
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const userId = user.id || user._id;
 
-    console.log('loadTasks params:', {
-      meetingId,
-      repo,
-      userId,
-    });
+      console.log('loadTasks params:', {
+        meetingId,
+        repo,
+        userId,
+      });
 
-    if (!userId || !repo) return;
+      if (!userId || !repo) return;
 
-    try {
-      const response = await fetchWithAuth(
-        `/api/users/${userId}/tasks?repo=${encodeURIComponent(repo)}`
-      );
+      try {
+        const response = await fetchWithAuth(
+          `/api/users/${userId}/tasks?repo=${encodeURIComponent(repo)}`
+        );
 
-      if (!response.ok) {
-        throw new Error('Failed to load tasks');
+        if (!response.ok) {
+          throw new Error('Failed to load tasks');
+        }
+
+        const data = await response.json();
+
+        console.log('first task full object:', (data.tasks || data || [])[0]);
+
+        const backendTasks = (data.tasks || data || []).map(
+          (task: any, index: number) => ({
+            id: task.id || task._id || Date.now() + index,
+            title: task.title || task.description || 'Untitled task',
+            assignee: task.assignee || task.assigneeName || task.owner || 'Unassigned',
+            due: task.due || task.dueDate || 'No due date',
+            tag: task.tag || task.jiraKey || `TASK-${task.gitHubIssueId || index + 1}`,
+            htmlUrl: task.htmlUrl || task.html_url || '',
+            done:
+              typeof task.status === 'string' &&
+              task.status.toLowerCase() === 'done',
+          })
+        );
+
+        if (backendTasks.length > 0) {
+          setTasks(backendTasks);
+        }
+      } catch (error) {
+        console.error('Failed to load tasks:', error);
       }
+    };
 
-      const data = await response.json();
-
-      console.log('first task full object:', (data.tasks || data || [])[0]);
-
-const backendTasks = (data.tasks || data || []).map(
-  (task: any, index: number) => ({
-    id: task.id || task._id || Date.now() + index,
-    title: task.title || task.description || 'Untitled task',
-    assignee: task.assignee || task.assigneeName || task.owner || 'Unassigned',
-    due: task.due || task.dueDate || 'No due date',
-    tag: task.tag || task.jiraKey || `TASK-${task.gitHubIssueId || index + 1}`,
-    htmlUrl: task.htmlUrl || task.html_url || '',
-    done:
-      typeof task.status === 'string' &&
-      task.status.toLowerCase() === 'done',
-  })
-);
-
-      if (backendTasks.length > 0) {
-        setTasks(backendTasks);
-      }
-    } catch (error) {
-      console.error('Failed to load tasks:', error);
-    }
-  };
-
-  loadTasks();
-}, []);
+    loadTasks();
+  }, []);
 
   const completedTasks = tasks.filter((task) => task.done);
   const openTasks = tasks.filter((task) => !task.done);
@@ -616,49 +616,49 @@ const backendTasks = (data.tasks || data || []).map(
               </header>
 
               <div className="meeting-tasks">
-{openTasks.length > 0 ? (
-  openTasks.map((task) => (
-    <div key={task.id} className="meeting-task-row">
-      <button
-        type="button"
-        className="meeting-task-status-dot meeting-task-status-dot--todo"
-        onClick={() => toggleTask(task.id)}
-        aria-label="Mark as done"
-      />
+                {openTasks.length > 0 ? (
+                  openTasks.map((task) => (
+                    <div key={task.id} className="meeting-task-row">
+                      <button
+                        type="button"
+                        className="meeting-task-status-dot meeting-task-status-dot--todo"
+                        onClick={() => toggleTask(task.id)}
+                        aria-label="Mark as done"
+                      />
 
-      <div className="meeting-task-row-info">
-        <strong className="meeting-task-row-title">
-          {task.title}
-        </strong>
+                      <div className="meeting-task-row-info">
+                        <strong className="meeting-task-row-title">
+                          {task.title}
+                        </strong>
 
-        <span className="meeting-task-row-meta">
-          {task.assignee}
-          <i>|</i>
-          {task.due}
-        </span>
-      </div>
+                        <span className="meeting-task-row-meta">
+                          {task.assignee}
+                          <i>|</i>
+                          {task.due}
+                        </span>
+                      </div>
 
-      <div className="meeting-task-row-badges">
-        {task.htmlUrl && (
-  <a
-    className="meeting-task-source"
-    href={task.htmlUrl}
-    target="_blank"
-    rel="noreferrer"
-  >
-    GitHub
-  </a>
-)}
-        <span className="meeting-task-tag">{task.tag}</span>
-      </div>
-    </div>
-  ))
-) : (
-  <div className="meeting-tasks-empty">
-    <span className="meeting-tasks-empty__icon">✓</span>
-    <span>No open tasks</span>
-  </div>
-)}
+                      <div className="meeting-task-row-badges">
+                        {task.htmlUrl && (
+                          <a
+                            className="meeting-task-source"
+                            href={task.htmlUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            GitHub
+                          </a>
+                        )}
+                        <span className="meeting-task-tag">{task.tag}</span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="meeting-tasks-empty">
+                    <span className="meeting-tasks-empty__icon">✓</span>
+                    <span>No open tasks</span>
+                  </div>
+                )}
               </div>
             </article>
           </div>
@@ -746,19 +746,19 @@ const backendTasks = (data.tasks || data || []).map(
               <article className="meeting-summary__card">
                 <h3>🕒 Remaining Tasks</h3>
                 <div className="meeting-summary__task-list">
-{openTasks.length > 0 ? (
-  openTasks.map((task) => (
-    <div key={task.id} className="meeting-summary__task-row">
-      <strong>{task.title}</strong>
-      <span>{task.assignee}</span>
-      <em>{task.due}</em>
-    </div>
-  ))
-) : (
-  <div className="meeting-summary__empty">
-    No open tasks.
-  </div>
-)}
+                  {openTasks.length > 0 ? (
+                    openTasks.map((task) => (
+                      <div key={task.id} className="meeting-summary__task-row">
+                        <strong>{task.title}</strong>
+                        <span>{task.assignee}</span>
+                        <em>{task.due}</em>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="meeting-summary__empty">
+                      No open tasks.
+                    </div>
+                  )}
                 </div>
               </article>
             </div>

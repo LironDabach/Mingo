@@ -191,7 +191,7 @@ const LoginPage = () => {
           setIsGoogleSubmitting(false);
         }
       },
-    }as any) as GoogleTokenClient;
+    } as any) as GoogleTokenClient;
 
     setIsGoogleSubmitting(true);
     tokenClient.requestAccessToken();
