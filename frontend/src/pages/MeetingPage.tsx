@@ -199,7 +199,68 @@ const MeetingPage = () => {
   const [emailSent, setEmailSent] = useState(false);
   const [emailSending, setEmailSending] = useState(false);
   const [emailError, setEmailError] = useState('');
-  const [tasks, setTasks] = useState<Task[]>(DEFAULT_TASKS);
+  const [tasks, setTasks] = useState<Task[]>([]);
+
+ useEffect(() => {
+  const loadTasks = async () => {
+    console.log('loadTasks started');
+
+    const meetingId =
+      meetingIdRef.current ||
+      parsedDraft?.id ||
+      localStorage.getItem('currentMeetingId') ||
+      '';
+
+    const repo = parsedDraft?.gitHubRepoName || repositoryLabel;
+
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const userId = user.id || user._id;
+
+    console.log('loadTasks params:', {
+      meetingId,
+      repo,
+      userId,
+    });
+
+    if (!userId || !repo) return;
+
+    try {
+      const response = await fetchWithAuth(
+        `/api/users/${userId}/tasks?repo=${encodeURIComponent(repo)}`
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to load tasks');
+      }
+
+      const data = await response.json();
+
+      console.log('tasks response:', data);
+
+      const backendTasks = (data.tasks || data || []).map(
+        (task: any, index: number) => ({
+          id: task.id || task._id || Date.now() + index,
+          title: task.title || task.description || 'Untitled task',
+          assignee: task.assignee || task.owner || 'Unassigned',
+          due: task.due || task.dueDate || 'No due date',
+          tag: task.tag || task.jiraKey || `TASK-${index + 1}`,
+          done:
+            task.done ||
+            task.status === 'done' ||
+            task.status === 'completed',
+        })
+      );
+
+      if (backendTasks.length > 0) {
+        setTasks(backendTasks);
+      }
+    } catch (error) {
+      console.error('Failed to load tasks:', error);
+    }
+  };
+
+  loadTasks();
+}, []);
 
   const completedTasks = tasks.filter((task) => task.done);
   const openTasks = tasks.filter((task) => !task.done);
@@ -554,39 +615,48 @@ const MeetingPage = () => {
               </header>
 
               <div className="meeting-tasks">
-                {tasks.map((task) => (
-                  <div key={task.id} className="meeting-task">
-                    <button
-                      type="button"
-                      className={`meeting-task__check ${task.done ? 'meeting-task__check--done' : ''}`}
-                      onClick={() => toggleTask(task.id)}
-                      aria-label={task.done ? 'Mark as open' : 'Mark as done'}
-                    >
-                      {task.done && (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      )}
-                    </button>
+{openTasks.length > 0 ? (
+  openTasks.map((task) => (
+    <div key={task.id} className="meeting-task">
+      <button
+        type="button"
+        className={`meeting-task__check ${task.done ? 'meeting-task__check--done' : ''}`}
+        onClick={() => toggleTask(task.id)}
+        aria-label={task.done ? 'Mark as open' : 'Mark as done'}
+      >
+        {task.done && (
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        )}
+      </button>
 
-                    <div className="meeting-task__status">
-                      <span className={`meeting-task__status-icon ${task.done ? 'meeting-task__status-icon--done' : ''}`}>
-                        {task.done ? '✓' : '○'}
-                      </span>
-                    </div>
+      <div className="meeting-task__status">
+        <span className={`meeting-task__status-icon ${task.done ? 'meeting-task__status-icon--done' : ''}`}>
+          {task.done ? '✓' : '○'}
+        </span>
+      </div>
 
-                    <div className="meeting-task__content">
-                      <strong>{task.title}</strong>
-                      <span>
-                        {task.assignee} <i>|</i> {task.due}
-                      </span>
-                    </div>
+      <div className="meeting-task__content">
+        <strong>{task.title}</strong>
+        <span>
+          {task.assignee} <i>|</i> {task.due}
+        </span>
+      </div>
 
-                    <div className="meeting-task__meta">
-                      <span className="meeting-tag">{task.tag}</span>
-                    </div>
-                  </div>
-                ))}
+      <div className="meeting-task__meta">
+        <span className="meeting-tag">{task.tag}</span>
+      </div>
+    </div>
+  ))
+) : (
+<div className="meeting-empty-state">
+  <div className="meeting-empty-state__icon">✓</div>
+  <div className="meeting-empty-state__text">
+    <strong>No open tasks</strong>
+  </div>
+</div>
+)}
               </div>
             </article>
           </div>
@@ -674,17 +744,19 @@ const MeetingPage = () => {
               <article className="meeting-summary__card">
                 <h3>🕒 Remaining Tasks</h3>
                 <div className="meeting-summary__task-list">
-                  {openTasks.length > 0 ? (
-                    openTasks.map((task) => (
-                      <div key={task.id} className="meeting-summary__task-row">
-                        <strong>{task.title}</strong>
-                        <span>{task.assignee}</span>
-                        <em>{task.due}</em>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="meeting-summary__empty">No open tasks remained after the meeting.</p>
-                  )}
+{openTasks.length > 0 ? (
+  openTasks.map((task) => (
+    <div key={task.id} className="meeting-summary__task-row">
+      <strong>{task.title}</strong>
+      <span>{task.assignee}</span>
+      <em>{task.due}</em>
+    </div>
+  ))
+) : (
+  <div className="meeting-summary__empty">
+    No open tasks.
+  </div>
+)}
                 </div>
               </article>
             </div>

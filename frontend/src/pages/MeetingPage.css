@@ -693,3 +693,37 @@
   }
 }
 
+.meeting-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  margin: 16px;
+  border-radius: 12px;
+  background: #f7f9fc;
+  border: 1px dashed #d6dde8;
+  color: #6b7a90;
+}
+
+.meeting-empty-state__icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #e6f0ff;
+  color: #3b82f6;
+  font-weight: bold;
+}
+
+.meeting-empty-state__text {
+  display: flex;
+  align-items: center;
+}
+
+.meeting-empty-state__text strong {
+  color: #1f2a44;
+  font-size: 14px;
+}
