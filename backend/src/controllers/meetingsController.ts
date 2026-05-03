@@ -272,7 +272,7 @@ class meetingsController extends baseController {
     try {
       const meeting = await this.withParticipantDetails(
         this.model.findById(requestedId),
-      );
+      ).populate("transcriptId", "content");
       if (meeting) {
         return res.json(meeting);
       }
@@ -289,7 +289,7 @@ class meetingsController extends baseController {
       return res.status(404).send("Error: Not found");
     } catch (err) {
       console.error(err);
-      return res.status(500).send("Error: Can't retrieve Entity by ID");
+      return res.status(500).send("Error: Can\'t retrieve Entity by ID");
     }
   }
 
@@ -309,7 +309,7 @@ class meetingsController extends baseController {
       return res.json(meetings);
     } catch (err) {
       console.error(err);
-      return res.status(500).send("Error: Can't retrieve meetings by user ID");
+      return res.status(500).send("Error: Can\'t retrieve meetings by user ID");
     }
   }
 
@@ -332,7 +332,7 @@ class meetingsController extends baseController {
       return res.json(meetings);
     } catch (err) {
       console.error(err);
-      return res.status(500).send("Error: Can't retrieve upcoming meetings");
+      return res.status(500).send("Error: Can\'t retrieve upcoming meetings");
     }
   }
 
@@ -356,7 +356,7 @@ class meetingsController extends baseController {
       return res.json(meetings);
     } catch (err) {
       console.error(err);
-      return res.status(500).send("Error: Can't retrieve recent meetings");
+      return res.status(500).send("Error: Can\'t retrieve recent meetings");
     }
   }
 
@@ -386,7 +386,7 @@ class meetingsController extends baseController {
       return res.json(meetings);
     } catch (err) {
       console.error(err);
-      return res.status(500).send("Error: Can't retrieve last month's meetings");
+      return res.status(500).send("Error: Can\'t retrieve last month\'s meetings");
     }
   }
 
@@ -416,7 +416,7 @@ class meetingsController extends baseController {
       return res.json(meetings);
     } catch (err) {
       console.error(err);
-      return res.status(500).send("Error: Can't retrieve this month's meetings");
+      return res.status(500).send("Error: Can\'t retrieve this month\'s meetings");
     }
   }
 
@@ -450,7 +450,7 @@ class meetingsController extends baseController {
       return res.json({ averageDuration });
     } catch (err) {
       console.error(err);
-      return res.status(500).send("Error: Can't retrieve average meeting duration");
+      return res.status(500).send("Error: Can\'t retrieve average meeting duration");
     }
   }
 
@@ -658,6 +658,7 @@ class meetingsController extends baseController {
         inviteEmails,
         topics: Array.isArray(req.body.topics) ? req.body.topics : [],
         tasks: Array.isArray(req.body.tasks) ? req.body.tasks : [],
+        source: req.body.source || 'planned',
       };
 
       const createdMeeting = await this.model.create(payload);
@@ -669,7 +670,7 @@ class meetingsController extends baseController {
     } catch (err) {
       console.error(err);
       const message =
-        err instanceof Error ? err.message : "Error: Can't create meeting";
+        err instanceof Error ? err.message : "Error: Can\'t create meeting";
       res
         .status(message.includes("Google Calendar") ? 400 : 500)
         .send(message);

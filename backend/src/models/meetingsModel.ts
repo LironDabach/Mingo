@@ -72,6 +72,11 @@ const meetingSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: "mingoAgent",
   },
+  source: {
+    type: String,
+    enum: ['upload', 'planned', 'live'],
+    required: true
+  }
 });
 
 export default mongoose.model("meeting", meetingSchema);
