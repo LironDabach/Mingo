@@ -88,7 +88,7 @@ const getAudioDurationInSeconds = async (filePath: string) => {
   }
 };
 
-const requestTranscription = async (filePath: string) => {
+const requestTranscription = async (filePath: string, fileName: string) => {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new TranscriptProcessingError("OpenAI API key not configured", 500);
@@ -96,7 +96,7 @@ const requestTranscription = async (filePath: string) => {
 
   const fileStream = fs.createReadStream(filePath);
   const formData = new FormData();
-  formData.append("file", fileStream);
+  formData.append("file", fileStream, fileName);
   formData.append("model", "whisper-1");
   formData.append("language", "en");
 
@@ -138,7 +138,7 @@ const transcribeAudio = async ({
 
   try {
     const [transcriptionText, duration] = await Promise.all([
-      requestTranscription(filePath),
+      requestTranscription(filePath, file.originalname),
       getAudioDurationInSeconds(filePath),
     ]);
     const result = await transcriptPersistenceService.createMeetingTranscript({
