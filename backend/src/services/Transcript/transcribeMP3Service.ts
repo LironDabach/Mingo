@@ -104,6 +104,7 @@ const requestTranscription = async (filePath: string, fileName: string) => {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
+	  ...formData.getHeaders(),
     },
     body: formData,
   });
