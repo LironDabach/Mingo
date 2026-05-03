@@ -80,6 +80,7 @@ const getAudioDurationInSeconds = async (filePath: string) => {
     const duration = Number.parseFloat(stdout.trim());
     return Number.isFinite(duration) ? Math.round(duration) : undefined;
   } catch (error: any) {
+    console.error("ffprobe error:", error)
     if (error?.code !== "ENOENT") {
       console.error("Failed to extract MP3 duration:", error);
     }
@@ -142,6 +143,7 @@ const transcribeAudio = async ({
       requestTranscription(filePath, file.originalname),
       getAudioDurationInSeconds(filePath),
     ]);
+    console.log(duration)
     const result = await transcriptPersistenceService.createMeetingTranscript({
       organizerId,
       content: transcriptionText,
