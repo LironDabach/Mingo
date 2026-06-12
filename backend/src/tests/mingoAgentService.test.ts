@@ -12,8 +12,9 @@ type MockMeeting = {
   organizerId: string;
   participants: string[];
   transcriptId: string;
+  gitHubRepoName?: string;
   topics: string[];
-  tasks: string[];
+  tasks: any[];
   mingoAgentId?: string;
   save?: jest.Mock<Promise<void>, []>;
 };
@@ -36,6 +37,11 @@ const createChat = () => ({
   _id: new mongoose.Types.ObjectId().toString(),
   messages: [] as Array<{ sender: "user" | "mingo"; content: string; timestamp: Date }>,
   save: jest.fn().mockResolvedValue(undefined),
+});
+
+const mockQueryChain = (value: any) => ({
+  populate: jest.fn().mockReturnThis(),
+  lean: jest.fn().mockResolvedValue(value),
 });
 
 const createMeetingsModelMock = (meetings: MockMeeting[]) => ({
@@ -137,6 +143,203 @@ describe("MingoAgentService.generateReply", () => {
     expect(answerPrompt).toContain("Current budget review");
     expect(answerPrompt).toContain("No additional meetings were retrieved for this question.");
     expect(answerPrompt).not.toContain("Budget follow-up");
+  });
+
+  test("uses live GitHub issue facts over stale local repo task records", async () => {
+    const userId = new mongoose.Types.ObjectId().toString();
+    const currentMeeting = createMeeting({
+      title: "hello",
+      organizerId: userId,
+      participants: [userId],
+      gitHubRepoName: "Aura",
+      tasks: [],
+    });
+    const chat = createChat();
+    const meetingsModelMock = createMeetingsModelMock([currentMeeting]);
+    const staleLocalTaskChain = mockQueryChain([
+        {
+          _id: new mongoose.Types.ObjectId().toString(),
+          title: "Adjust post module in the server",
+          status: "To Do",
+          gitHubIssueId: 38,
+          gitHubRepoName: "Aura",
+          gitHubRepoOwner: userId,
+        },
+      ]);
+    const tasksModelMock = {
+      find: jest.fn().mockReturnValue(staleLocalTaskChain),
+    };
+    const usersModelMock = {
+      findById: jest.fn().mockResolvedValue({
+        _id: userId,
+        username: "LironDabach",
+      }),
+    };
+    const chatsModelMock = {
+      findById: jest.fn().mockResolvedValue(null),
+      findOne: jest.fn().mockResolvedValue(chat),
+      create: jest.fn().mockResolvedValue(chat),
+    };
+    const fetchMock = jest.spyOn(global, "fetch" as any).mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue([
+        {
+          number: 74,
+          title: "Enable HTTPS deployment",
+          state: "open",
+          assignee: { login: "LironDabach" },
+          pull_request: undefined,
+          milestone: null,
+        },
+      ]),
+    } as any);
+    const llmGenerate = jest
+      .fn()
+      .mockResolvedValueOnce({
+        response: JSON.stringify({
+          scope: "current_meeting",
+          searchOtherMeetings: false,
+          comparisonMode: false,
+          temporalDirection: "any",
+          requestedEntities: ["tasks"],
+          keywords: ["open", "tasks", "repo"],
+          limit: 0,
+          rationale: "The user asked about repository tasks.",
+        }),
+      })
+      .mockResolvedValueOnce({
+        response: "There is 1 open task for Aura: #74 Enable HTTPS deployment.",
+      });
+    const service = new MingoAgentService({ generate: llmGenerate } as any);
+
+    (service as any).meetings = meetingsModelMock;
+    (service as any).tasks = tasksModelMock;
+    (service as any).users = usersModelMock;
+    (service as any).chats = chatsModelMock;
+
+    await service.generateReply(
+      currentMeeting._id,
+      "how many open tasks does this repo have?",
+      userId,
+    );
+
+    const answerPrompt = llmGenerate.mock.calls[1][0].prompt as string;
+    expect(answerPrompt).toContain("- Open tasks: 1");
+    expect(answerPrompt).toContain("Enable HTTPS deployment");
+    expect(answerPrompt).toContain("issue=74");
+    expect(answerPrompt).toContain("Authoritative sources: github:LironDabach/Aura");
+    expect(answerPrompt).not.toContain("Adjust post module in the server");
+    expect(answerPrompt).not.toContain("issue=38");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/repos/LironDabach/Aura/issues?state=all&per_page=100&sort=updated",
+      expect.any(Object),
+    );
+
+    fetchMock.mockRestore();
+  });
+
+  test("resolves follow-up task references from current facts instead of stale assistant history", async () => {
+    const userId = new mongoose.Types.ObjectId().toString();
+    const currentMeeting = createMeeting({
+      title: "hello",
+      organizerId: userId,
+      participants: [userId],
+      gitHubRepoName: "Aura",
+      tasks: [],
+    });
+    const chat = createChat();
+    chat.messages = [
+      {
+        sender: "user",
+        content: "how many open tasks does this repo have?",
+        timestamp: new Date("2026-03-20T09:00:00.000Z"),
+      },
+      {
+        sender: "mingo",
+        content:
+          'There is 1 open task for the "Aura" repository: task #38 "Adjust post module in the server".',
+        timestamp: new Date("2026-03-20T09:00:01.000Z"),
+      },
+    ];
+    const meetingsModelMock = createMeetingsModelMock([currentMeeting]);
+    const tasksModelMock = {
+      find: jest.fn().mockReturnValue(
+        mockQueryChain([
+          {
+            _id: new mongoose.Types.ObjectId().toString(),
+            title: "Adjust post module in the server",
+            status: "To Do",
+            gitHubIssueId: 38,
+            gitHubRepoName: "Aura",
+            gitHubRepoOwner: userId,
+          },
+        ]),
+      ),
+    };
+    const usersModelMock = {
+      findById: jest.fn().mockResolvedValue({
+        _id: userId,
+        username: "LironDabach",
+      }),
+    };
+    const chatsModelMock = {
+      findById: jest.fn().mockResolvedValue(null),
+      findOne: jest.fn().mockResolvedValue(chat),
+      create: jest.fn().mockResolvedValue(chat),
+    };
+    const fetchMock = jest.spyOn(global, "fetch" as any).mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue([
+        {
+          number: 74,
+          title: "Enable HTTPS deployment",
+          state: "open",
+          assignee: { login: "LironDabach" },
+          pull_request: undefined,
+          milestone: null,
+        },
+      ]),
+    } as any);
+    const llmGenerate = jest
+      .fn()
+      .mockResolvedValueOnce({
+        response: JSON.stringify({
+          scope: "current_meeting",
+          searchOtherMeetings: false,
+          comparisonMode: false,
+          temporalDirection: "any",
+          requestedEntities: ["tasks"],
+          keywords: ["task", "repo"],
+          limit: 0,
+          rationale: "The user asked a follow-up about a task.",
+        }),
+      })
+      .mockResolvedValueOnce({
+        response: "This task is #74: Enable HTTPS deployment.",
+      });
+    const service = new MingoAgentService({ generate: llmGenerate } as any);
+
+    (service as any).meetings = meetingsModelMock;
+    (service as any).tasks = tasksModelMock;
+    (service as any).users = usersModelMock;
+    (service as any).chats = chatsModelMock;
+
+    await service.generateReply(currentMeeting._id, "what is this task?", userId);
+
+    const answerPrompt = llmGenerate.mock.calls[1][0].prompt as string;
+    expect(answerPrompt).toContain(
+      "Likely task referenced by the current user message: #74 | Enable HTTPS deployment",
+    );
+    expect(answerPrompt).toContain(
+      "Task issue numbers mentioned in chat history but absent from current structured facts: #38",
+    );
+    expect(answerPrompt).toContain(
+      "Never use assistant messages in chat history as factual evidence",
+    );
+    expect(answerPrompt).toContain("issue=74");
+    expect(answerPrompt).not.toContain("issue=38");
+
+    fetchMock.mockRestore();
   });
 
   test("includes related authorized meetings when the user asks a cross-meeting question", async () => {
