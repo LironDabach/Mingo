@@ -1,5 +1,7 @@
 import mingoAgentModel from "../../models/mingoAgentModel";
 import meetingsModel from "../../models/meetingsModel";
+import tasksModel from "../../models/tasksModel";
+import usersModel from "../../models/usersModel";
 import llmService, { LlmService } from "./llmService";
 
 export class MingoAgentError extends Error {
@@ -47,6 +49,28 @@ type RetrievalPlan = {
   rationale: string;
 };
 
+type TaskFact = {
+  id: string;
+  title: string;
+  status: string;
+  open: boolean | null;
+  source: "meeting_task" | "repo_task" | "github_issue";
+  repo: string | null;
+  issueNumber: number | null;
+  assignee: string | null;
+  dueDate: string | null;
+  meetingTitle: string | null;
+};
+
+type TaskFactSummary = {
+  total: number;
+  open: number;
+  done: number;
+  unknown: number;
+  authoritativeSources: string[];
+  tasks: TaskFact[];
+};
+
 class MingoAgentService {
   private static readonly MAX_USER_MESSAGE_LENGTH = 4000;
   private static readonly MAX_ASSISTANT_MESSAGE_LENGTH = 6000;
@@ -60,6 +84,8 @@ class MingoAgentService {
   );
 
   private meetings = meetingsModel;
+  private tasks = tasksModel;
+  private users = usersModel;
   private chats = mingoAgentModel;
   private llm: LlmService;
 
@@ -359,6 +385,493 @@ class MingoAgentService {
     }
 
     return String(value);
+  }
+
+  private normalizeRepoName(value: unknown) {
+    return typeof value === "string" ? value.trim().toLowerCase() : "";
+  }
+
+  private normalizeTaskStatus(value: unknown) {
+    const status = typeof value === "string" ? value.trim() : "";
+    return status || "Unknown";
+  }
+
+  private resolveOpenState(status: string) {
+    const normalizedStatus = status.toLowerCase();
+
+    if (
+      normalizedStatus === "done" ||
+      normalizedStatus === "closed" ||
+      normalizedStatus === "complete" ||
+      normalizedStatus === "completed"
+    ) {
+      return false;
+    }
+
+    if (
+      normalizedStatus === "to do" ||
+      normalizedStatus === "todo" ||
+      normalizedStatus === "in progress" ||
+      normalizedStatus === "open"
+    ) {
+      return true;
+    }
+
+    return null;
+  }
+
+  private resolveStatusFromGitHubIssue(issue: { state?: string }) {
+    return issue.state === "closed" ? "Done" : "To Do";
+  }
+
+  private toIsoOrNull(value: unknown) {
+    if (!value) {
+      return null;
+    }
+
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+
+    const date = new Date(value as string | number | Date);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  }
+
+  private getGitHubAuthorization(user: any) {
+    if (!user?.githubAccessToken) {
+      return null;
+    }
+
+    const tokenType =
+      typeof user.githubTokenType === "string" &&
+      user.githubTokenType.trim().toLowerCase() === "bearer"
+        ? "Bearer"
+        : "token";
+
+    return `${tokenType} ${user.githubAccessToken}`;
+  }
+
+  private async fetchGitHubJson<T>(url: string, authorization?: string) {
+    try {
+      const headers: Record<string, string> = {
+        Accept: "application/vnd.github+json",
+        "User-Agent": "Mingo",
+        "X-GitHub-Api-Version": "2022-11-28",
+      };
+
+      if (authorization) {
+        headers.Authorization = authorization;
+      }
+
+      const response = await fetch(url, {
+        headers,
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      return (await response.json()) as T;
+    } catch {
+      return null;
+    }
+  }
+
+  private buildTaskFact(task: any, source: TaskFact["source"], meeting?: any) {
+    const id = this.stringifyId(task?._id) || this.stringifyId(task?.id);
+    const repo =
+      typeof task?.gitHubRepoName === "string" && task.gitHubRepoName.trim()
+        ? task.gitHubRepoName.trim()
+        : typeof meeting?.gitHubRepoName === "string" &&
+            meeting.gitHubRepoName.trim()
+          ? meeting.gitHubRepoName.trim()
+          : null;
+    const issueNumber =
+      typeof task?.gitHubIssueId === "number"
+        ? task.gitHubIssueId
+        : typeof task?.gitHubIssueId === "string" &&
+            Number.isFinite(Number(task.gitHubIssueId))
+          ? Number(task.gitHubIssueId)
+          : null;
+    const title =
+      typeof task?.title === "string" && task.title.trim()
+        ? task.title.trim()
+        : repo && issueNumber
+          ? `${repo} issue ${issueNumber}`
+          : id || "Untitled task";
+    const status = this.normalizeTaskStatus(task?.status);
+
+    return {
+      id: id || `${source}:${repo || "unknown"}:${issueNumber || title}`,
+      title,
+      status,
+      open: this.resolveOpenState(status),
+      source,
+      repo,
+      issueNumber,
+      assignee:
+        typeof task?.assigneeName === "string" && task.assigneeName.trim()
+          ? task.assigneeName.trim()
+          : typeof task?.assigneeId?.fullname === "string" &&
+              task.assigneeId.fullname.trim()
+            ? task.assigneeId.fullname.trim()
+            : typeof task?.assigneeId?.username === "string" &&
+                task.assigneeId.username.trim()
+              ? task.assigneeId.username.trim()
+              : null,
+      dueDate: this.toIsoOrNull(task?.dueDate),
+      meetingTitle:
+        typeof meeting?.title === "string" && meeting.title.trim()
+          ? meeting.title.trim()
+          : null,
+    };
+  }
+
+  private buildGitHubIssueFact(issue: any, repo: string) {
+    const status = this.resolveStatusFromGitHubIssue(issue);
+
+    return {
+      id: `github:${repo}#${issue.number}`,
+      title:
+        typeof issue.title === "string" && issue.title.trim()
+          ? issue.title.trim()
+          : `${repo} issue ${issue.number}`,
+      status,
+      open: this.resolveOpenState(status),
+      source: "github_issue" as const,
+      repo,
+      issueNumber:
+        typeof issue.number === "number" ? issue.number : Number(issue.number),
+      assignee:
+        typeof issue.assignee?.login === "string" && issue.assignee.login.trim()
+          ? issue.assignee.login.trim()
+          : null,
+      dueDate: this.toIsoOrNull(issue.milestone?.due_on),
+      meetingTitle: null,
+    };
+  }
+
+  private dedupeTaskFacts(facts: TaskFact[]) {
+    const seen = new Set<string>();
+    const deduped: TaskFact[] = [];
+
+    for (const fact of facts) {
+      const repo = this.normalizeRepoName(fact.repo);
+      const issueKey = repo && fact.issueNumber ? `${repo}#${fact.issueNumber}` : "";
+      const key = issueKey || fact.id;
+
+      if (!key || seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      deduped.push(fact);
+    }
+
+    return deduped;
+  }
+
+  private summarizeTaskFacts(
+    facts: TaskFact[],
+    authoritativeSources: string[] = [],
+  ): TaskFactSummary {
+    const tasks = this.dedupeTaskFacts(facts);
+
+    return {
+      total: tasks.length,
+      open: tasks.filter((task) => task.open === true).length,
+      done: tasks.filter((task) => task.open === false).length,
+      unknown: tasks.filter((task) => task.open === null).length,
+      authoritativeSources,
+      tasks,
+    };
+  }
+
+  private async getGitHubRepoCandidates(
+    repoName: string,
+    user: any,
+    authorization?: string,
+  ) {
+    const candidates = new Set<string>();
+    const trimmedRepoName = repoName.trim();
+
+    if (!trimmedRepoName) {
+      return [];
+    }
+
+    candidates.add(trimmedRepoName);
+
+    if (trimmedRepoName.includes("/")) {
+      return Array.from(candidates);
+    }
+
+    [user?.username, user?.fullname]
+      .filter((value) => typeof value === "string" && value.trim())
+      .forEach((owner) => candidates.add(`${owner.trim()}/${trimmedRepoName}`));
+
+    if (!authorization) {
+      return Array.from(candidates);
+    }
+
+    const repos = await this.fetchGitHubJson<
+      Array<{ name?: string; full_name?: string }>
+    >("https://api.github.com/user/repos?sort=updated&per_page=100", authorization);
+
+    const normalizedRepoName = this.normalizeRepoName(repoName);
+    repos
+      ?.filter(
+        (repo) =>
+          this.normalizeRepoName(repo.name) === normalizedRepoName ||
+          this.normalizeRepoName(repo.full_name) === normalizedRepoName,
+      )
+      .forEach((repo) => {
+        if (repo.full_name) {
+          candidates.add(repo.full_name);
+        }
+      });
+
+    return Array.from(candidates);
+  }
+
+  private async fetchGitHubIssueFactsForRepo(repoName: string, userId?: string) {
+    if (!userId || !repoName.trim()) {
+      return { facts: [] as TaskFact[], authoritativeRepo: null as string | null };
+    }
+
+    const user = await this.users.findById(userId);
+    const authorization = this.getGitHubAuthorization(user);
+    const repoCandidates = await this.getGitHubRepoCandidates(
+      repoName,
+      user,
+      authorization || undefined,
+    );
+
+    for (const candidate of repoCandidates) {
+      if (!candidate.includes("/")) {
+        continue;
+      }
+
+      const issues = await this.fetchGitHubJson<
+        Array<{
+          number: number;
+          title: string;
+          state: string;
+          assignee?: { login?: string } | null;
+          pull_request?: unknown;
+          milestone?: { due_on?: string | null } | null;
+        }>
+      >(
+        `https://api.github.com/repos/${candidate}/issues?state=all&per_page=100&sort=updated`,
+        authorization || undefined,
+      );
+
+      if (issues) {
+        return {
+          facts: issues
+            .filter((issue) => !issue.pull_request)
+            .map((issue) => this.buildGitHubIssueFact(issue, candidate)),
+          authoritativeRepo: candidate,
+        };
+      }
+    }
+
+    return { facts: [] as TaskFact[], authoritativeRepo: null as string | null };
+  }
+
+  private async loadTaskFactsForMeeting(meeting: any, userId?: string) {
+    const facts: TaskFact[] = [];
+    const rawTasks: unknown[] = Array.isArray(meeting?.tasks) ? meeting.tasks : [];
+    const taskObjectIds = rawTasks
+      .filter((task) => typeof task === "string" && /^[a-f0-9]{24}$/i.test(task))
+      .map((task) => String(task));
+
+    rawTasks.forEach((task) => {
+      if (task && typeof task === "object") {
+        facts.push(this.buildTaskFact(task, "meeting_task", meeting));
+      }
+    });
+
+    if (taskObjectIds.length > 0) {
+      const taskQuery = this.tasks
+        .find({ _id: { $in: taskObjectIds } })
+        .populate("assigneeId", "fullname email username");
+      const taskDocs =
+        taskQuery && typeof taskQuery.lean === "function"
+          ? await taskQuery.lean()
+          : await taskQuery;
+
+      (taskDocs || []).forEach((task: any) => {
+        facts.push(this.buildTaskFact(task, "meeting_task", meeting));
+      });
+    }
+
+    const repoName =
+      typeof meeting?.gitHubRepoName === "string" ? meeting.gitHubRepoName.trim() : "";
+
+    if (repoName) {
+      const userTaskQuery = this.tasks
+        .find(
+          userId
+            ? {
+                $or: [{ gitHubRepoOwner: userId }, { assigneeId: userId }],
+              }
+            : {},
+        )
+        .populate("assigneeId", "fullname email username");
+      const userTasks =
+        userTaskQuery && typeof userTaskQuery.lean === "function"
+          ? await userTaskQuery.lean()
+          : await userTaskQuery;
+      const normalizedRepoName = this.normalizeRepoName(repoName);
+
+      (userTasks || [])
+        .filter((task: any) => {
+          const taskRepo = this.normalizeRepoName(task?.gitHubRepoName);
+          return (
+            taskRepo === normalizedRepoName ||
+            taskRepo.endsWith(`/${normalizedRepoName}`) ||
+            normalizedRepoName.endsWith(`/${taskRepo}`)
+          );
+        })
+        .forEach((task: any) => {
+          facts.push(this.buildTaskFact(task, "repo_task", meeting));
+        });
+
+      const githubResult = await this.fetchGitHubIssueFactsForRepo(repoName, userId);
+      if (githubResult.authoritativeRepo) {
+        const authoritativeRepo = this.normalizeRepoName(githubResult.authoritativeRepo);
+        const localFactsOutsideLiveRepo = facts.filter((fact) => {
+          if (fact.source === "github_issue") {
+            return true;
+          }
+
+          const factRepo = this.normalizeRepoName(fact.repo);
+          return (
+            !factRepo ||
+            (factRepo !== authoritativeRepo &&
+              !authoritativeRepo.endsWith(`/${factRepo}`) &&
+              !factRepo.endsWith(`/${authoritativeRepo}`))
+          );
+        });
+
+        return this.summarizeTaskFacts(
+          [...localFactsOutsideLiveRepo, ...githubResult.facts],
+          [`github:${githubResult.authoritativeRepo}`],
+        );
+      }
+
+      facts.push(...githubResult.facts);
+    }
+
+    return this.summarizeTaskFacts(facts);
+  }
+
+  private formatTaskFactSummary(summary: TaskFactSummary, label: string) {
+    const taskRows = summary.tasks.length
+      ? summary.tasks
+          .map((task, index) =>
+            [
+              `${index + 1}. ${task.title}`,
+              `status=${task.status}`,
+              `open=${task.open === null ? "unknown" : String(task.open)}`,
+              task.repo ? `repo=${task.repo}` : "",
+              task.issueNumber ? `issue=${task.issueNumber}` : "",
+              task.assignee ? `assignee=${task.assignee}` : "",
+              task.dueDate ? `due=${task.dueDate}` : "",
+              `source=${task.source}`,
+            ]
+              .filter(Boolean)
+              .join(" | "),
+          )
+          .join("\n")
+      : "No task facts retrieved.";
+
+    return [
+      `${label} task facts:`,
+      `- Total tasks: ${summary.total}`,
+      `- Open tasks: ${summary.open}`,
+      `- Done tasks: ${summary.done}`,
+      `- Unknown-status tasks: ${summary.unknown}`,
+      `- Authoritative sources: ${
+        summary.authoritativeSources.length
+          ? summary.authoritativeSources.join(", ")
+          : "local meeting/task records"
+      }`,
+      "- Status rule: open=true means the task is not done. Open tasks include To Do, In Progress, and open GitHub issues. Done/closed tasks are not open.",
+      "Tasks:",
+      taskRows,
+    ].join("\n");
+  }
+
+  private findIssueNumbers(value: string) {
+    return Array.from(value.matchAll(/#(\d+)\b/g))
+      .map((match) => Number(match[1]))
+      .filter((issueNumber) => Number.isFinite(issueNumber));
+  }
+
+  private formatTaskFactReference(task: TaskFact) {
+    return [
+      task.issueNumber ? `#${task.issueNumber}` : task.id,
+      task.title,
+      `status=${task.status}`,
+      `open=${task.open === null ? "unknown" : String(task.open)}`,
+      task.repo ? `repo=${task.repo}` : "",
+      task.assignee ? `assignee=${task.assignee}` : "",
+      `source=${task.source}`,
+    ]
+      .filter(Boolean)
+      .join(" | ");
+  }
+
+  private buildReferenceHints(
+    primaryTaskFacts: TaskFactSummary,
+    history: ChatMessage[],
+    userMessage: string,
+  ) {
+    const userIssueNumbers = this.findIssueNumbers(userMessage);
+    const factIssueNumbers = new Set(
+      primaryTaskFacts.tasks
+        .map((task) => task.issueNumber)
+        .filter((issueNumber): issueNumber is number => issueNumber !== null),
+    );
+    const directlyReferencedTasks = userIssueNumbers
+      .map((issueNumber) =>
+        primaryTaskFacts.tasks.find((task) => task.issueNumber === issueNumber),
+      )
+      .filter(Boolean) as TaskFact[];
+    const normalizedMessage = userMessage.toLowerCase();
+    const hasTaskReference =
+      /\b(this|that|it|its|these|those|the task|the issue|that task|this task|this issue|that issue)\b/.test(
+        normalizedMessage,
+      );
+    const openTasks = primaryTaskFacts.tasks.filter((task) => task.open === true);
+    const onlyTask =
+      primaryTaskFacts.tasks.length === 1 ? primaryTaskFacts.tasks[0] : null;
+    const likelyTask =
+      directlyReferencedTasks[0] ||
+      (hasTaskReference && openTasks.length === 1 ? openTasks[0] : null) ||
+      (hasTaskReference && onlyTask ? onlyTask : null);
+    const historyIssueNumbers = history.flatMap((message) =>
+      this.findIssueNumbers(message.content),
+    );
+    const unsupportedHistoryIssues = historyIssueNumbers.filter(
+      (issueNumber, index, array) =>
+        array.indexOf(issueNumber) === index && !factIssueNumbers.has(issueNumber),
+    );
+
+    return [
+      "Reference resolution hints:",
+      "- Chat history is conversational context only. It is not a source of truth for task identity, status, or counts.",
+      "- If chat history conflicts with structured task facts, ignore the conflicting history and use structured task facts.",
+      likelyTask
+        ? `- Likely task referenced by the current user message: ${this.formatTaskFactReference(likelyTask)}`
+        : "- No single task reference could be resolved from the current structured facts.",
+      unsupportedHistoryIssues.length
+        ? `- Task issue numbers mentioned in chat history but absent from current structured facts: ${unsupportedHistoryIssues
+            .map((issueNumber) => `#${issueNumber}`)
+            .join(", ")}. Do not use them as current facts.`
+        : "- No unsupported task issue numbers were found in chat history.",
+    ].join("\n");
   }
 
   private async runLlmGenerate(options: Parameters<LlmService["generate"]>[0]) {
@@ -832,14 +1345,24 @@ class MingoAgentService {
       return [] as any[];
     }
 
-    const accessibleMeetings = await this.meetings
+    const meetingsQuery = this.meetings
       .find({
         _id: { $ne: primaryMeeting._id },
         $or: [{ organizerId: userId }, { participants: userId }],
       })
       .sort({ date: -1 })
-      .limit(MingoAgentService.RELATED_MEETINGS_LOOKBACK)
-      .lean();
+      .limit(MingoAgentService.RELATED_MEETINGS_LOOKBACK);
+    const populatedMeetingsQuery =
+      meetingsQuery && typeof meetingsQuery.populate === "function"
+        ? meetingsQuery.populate({
+            path: "tasks",
+            populate: { path: "assigneeId", select: "fullname email username" },
+          })
+        : meetingsQuery;
+    const accessibleMeetings =
+      populatedMeetingsQuery && typeof populatedMeetingsQuery.lean === "function"
+        ? await populatedMeetingsQuery.lean()
+        : await populatedMeetingsQuery;
 
     return (accessibleMeetings || [])
       .map((meeting: any) => ({
@@ -869,6 +1392,8 @@ class MingoAgentService {
     meeting: any,
     plan: RetrievalPlan,
     relatedMeetings: any[],
+    primaryTaskFacts: TaskFactSummary,
+    relatedTaskFacts: TaskFactSummary[],
     history: ChatMessage[],
     userMessage: string,
   ) {
@@ -880,7 +1405,12 @@ class MingoAgentService {
       "Your scope is the meeting domain only: meetings, agendas, summaries, action items, decisions, blockers, follow-ups, participants, scheduling implications, tasks, and meeting-related questions.",
       "Be generic within that domain so you can handle many different meeting-oriented requests without needing custom code paths.",
       "Treat the current meeting as the primary context.",
-      "Use the retrieval plan only as search guidance. Answer only from the provided meeting data and chat history as facts.",
+      "Use the retrieval plan only as search guidance. Answer only from the provided structured facts and meeting data.",
+      "The structured task facts are the authoritative source for task titles, status, repositories, issue numbers, assignees, due dates, and counts.",
+      "For task, action item, status, repository, or count questions, answer from the structured task facts first. Do not infer that there are no tasks from empty meeting.tasks arrays if task facts are present.",
+      "When the task facts list an authoritative GitHub source, treat those live GitHub facts as newer than local meeting/task records for that repository.",
+      "Use chat history only to understand conversational references. Never use assistant messages in chat history as factual evidence when structured facts are available.",
+      "If the structured facts include aggregate counts, use those counts exactly instead of estimating from prose.",
       "If information is missing, say that clearly.",
       "If you offer a suggestion or inference, label it clearly as a suggestion or inference.",
       "If the user asks for something outside the meeting-management domain, briefly say that the request is outside Mingo's scope and steer the answer back to meeting-related help.",
@@ -896,6 +1426,11 @@ class MingoAgentService {
       "",
       "Primary meeting JSON:",
       this.formatContextAsJson(meeting),
+      "",
+      this.formatTaskFactSummary(primaryTaskFacts, "Primary meeting and repository"),
+      "",
+      "Primary task facts JSON:",
+      this.formatContextAsJson(primaryTaskFacts),
       "",
       "Additional relevant meetings:",
       relatedMeetings.length
@@ -914,6 +1449,17 @@ class MingoAgentService {
         ? this.formatContextAsJson(relatedMeetings)
         : "[]",
       "",
+      "Additional meeting task facts:",
+      relatedTaskFacts.length
+        ? relatedTaskFacts
+            .map((summary, index) =>
+              this.formatTaskFactSummary(summary, `Related meeting ${index + 1}`),
+            )
+            .join("\n\n")
+        : "[]",
+      "",
+      this.buildReferenceHints(primaryTaskFacts, history, userMessage),
+      "",
       "Recent chat history:",
       this.serializeHistory(history),
       "",
@@ -925,10 +1471,17 @@ class MingoAgentService {
 
   private async getMeetingOrThrow(meetingId: string) {
     const meetingQuery = this.meetings.findById(meetingId);
+    const populatedMeetingQuery =
+      meetingQuery && typeof meetingQuery.populate === "function"
+        ? meetingQuery.populate({
+            path: "tasks",
+            populate: { path: "assigneeId", select: "fullname email username" },
+          })
+        : meetingQuery;
     const meeting =
-      meetingQuery && typeof meetingQuery.lean === "function"
-        ? await meetingQuery.lean()
-        : await meetingQuery;
+      populatedMeetingQuery && typeof populatedMeetingQuery.lean === "function"
+        ? await populatedMeetingQuery.lean()
+        : await populatedMeetingQuery;
 
     if (!meeting) {
       throw new MingoAgentError("Meeting not found", 404);
@@ -1033,11 +1586,19 @@ class MingoAgentService {
       meeting,
       retrievalPlan,
     );
+    const primaryTaskFacts = await this.loadTaskFactsForMeeting(meeting, userId);
+    const relatedTaskFacts = await Promise.all(
+      relatedMeetings.map((relatedMeeting) =>
+        this.loadTaskFactsForMeeting(relatedMeeting, userId),
+      ),
+    );
 
     const prompt = this.buildPrompt(
       meeting,
       retrievalPlan,
       relatedMeetings,
+      primaryTaskFacts,
+      relatedTaskFacts,
       recentHistory,
       normalizedMessage,
     );

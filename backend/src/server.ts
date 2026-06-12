@@ -8,7 +8,7 @@ import path from "path";
 const isProduction = process.env.NODE_ENV === "production";
 const envPath = path.resolve(
   __dirname,
-  isProduction ? "../.env" : "../.env.development",
+  isProduction ? "../.env" : "../../.env.development",
 );
 
 dotenv.config({ path: envPath });
