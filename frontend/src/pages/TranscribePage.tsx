@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+﻿import { useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import './TranscribePage.css';
 
@@ -37,19 +37,26 @@ const TranscribePage = () => {
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('title', file.name.replace('.mp3', ''));
 
     try {
-      const response = await fetch('/api/transcribe', {
+      const response = await fetch('/api/transcript/mp3', {
         method: 'POST',
         body: formData,
       });
 
       if (!response.ok) {
-        throw new Error('Transcription failed');
+        const errorData = await response.json().catch(() => ({ error: 'Transcription failed' }));
+        throw new Error(errorData.error || 'Transcription failed');
       }
 
       const data = await response.json();
-      setTranscription(data.transcription || data.text);
+      // Extract transcription from the meeting transcript object
+      const transcriptionText = data?.transcript?.content || data?.content || '';
+      if (!transcriptionText) {
+        throw new Error('No transcription received');
+      }
+      setTranscription(transcriptionText);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred during transcription');
     } finally {

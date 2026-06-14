@@ -72,6 +72,7 @@ class transcriptController extends baseController {
         content: req.body?.content,
         title: req.body?.title,
         date: req.body?.date,
+        source: 'upload',
       });
 
       return res.status(201).json(result);

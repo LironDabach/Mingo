@@ -1,10 +1,10 @@
-import fs from "fs";
+﻿import fs from "fs";
 import { promisify } from "util";
 import { execFile } from "child_process";
-import FormData from "form-data";
-import fetch from "node-fetch";
 import multer from "multer";
 import path from "path";
+import FormData from "form-data";
+import fetch from "node-fetch";
 import transcriptPersistenceService from "./transcriptPersistenceService";
 
 const execFileAsync = promisify(execFile);
@@ -95,23 +95,28 @@ const requestTranscription = async (filePath: string, fileName: string) => {
   }
 
   try {
-    const fileBuffer = await fs.promises.readFile(filePath);
-    const formData = new FormData();
-    formData.append("file", fileBuffer, fileName);
-    formData.append("model", "whisper-1");
-    formData.append("language", "en");
+    // Create form data with file stream
+    const form = new FormData();
+    const fileStream = fs.createReadStream(filePath);
+    
+    form.append("file", fileStream, fileName);
+    form.append("model", "whisper-1");
+    form.append("language", "en");
+
+    console.log(`Sending ${fileName} to OpenAI for transcription...`);
 
     const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        ...formData.getHeaders(),
+        ...form.getHeaders(),
       },
-      body: formData,
+      body: form as any,
     });
 
     if (!response.ok) {
       const errorData = await response.json();
+      console.error("OpenAI API error:", errorData);
       throw new TranscriptProcessingError(
         errorData.error?.message || "Transcription failed",
         response.status,
@@ -125,15 +130,18 @@ const requestTranscription = async (filePath: string, fileName: string) => {
       throw new TranscriptProcessingError("OpenAI returned an empty transcription", 502);
     }
 
+    console.log(`Transcription successful: ${text.substring(0, 100)}...`);
     return text;
   } catch (error) {
     if (error instanceof TranscriptProcessingError) {
       throw error;
     }
-    throw new TranscriptProcessingError(
-      error instanceof Error ? error.message : "Failed to transcribe audio",
-      500,
-    );
+    
+    const errorMessage = error instanceof Error ? error.message : "Failed to transcribe audio";
+    console.error("Transcription error:", errorMessage);
+    console.error("Full error:", error);
+    
+    throw new TranscriptProcessingError(errorMessage, 500);
   }
 };
 
@@ -159,6 +167,7 @@ const transcribeAudio = async ({
       date,
       gitHubRepoName,
       attendeeEmails,
+      source: 'upload',
     });
 
     if (typeof duration === "number") {

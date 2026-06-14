@@ -11,6 +11,7 @@ type CreateMeetingTranscriptInput = {
   date?: string | Date | undefined;
   gitHubRepoName?: string | undefined;
   attendeeEmails?: string[] | undefined;
+  source?: 'upload' | 'planned' | 'live';
 };
 
 const parseMeetingDate = (value?: string | Date) => {
@@ -49,6 +50,7 @@ const createMeetingTranscript = async ({
   date,
   gitHubRepoName,
   attendeeEmails = [],
+  source = 'upload',
 }: CreateMeetingTranscriptInput) => {
   const meetingDate = parseMeetingDate(date);
   const transcriptContent = normalizeTranscriptContent(content);
@@ -87,6 +89,7 @@ const createMeetingTranscript = async ({
       transcriptId: transcript._id,
       inviteEmails,
       endedAt: new Date(),
+      source,
     };
     if (gitHubRepoName?.trim()) {
       meetingPayload.gitHubRepoName = gitHubRepoName.trim();
