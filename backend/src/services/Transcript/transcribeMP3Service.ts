@@ -95,9 +95,9 @@ const requestTranscription = async (filePath: string, fileName: string) => {
   }
 
   try {
-    const fileStream = fs.createReadStream(filePath);
+    const fileBuffer = await fs.promises.readFile(filePath);
     const formData = new FormData();
-    formData.append("file", fileStream, fileName);
+    formData.append("file", fileBuffer, fileName);
     formData.append("model", "whisper-1");
     formData.append("language", "en");
 
