@@ -94,37 +94,47 @@ const requestTranscription = async (filePath: string, fileName: string) => {
     throw new TranscriptProcessingError("OpenAI API key not configured", 500);
   }
 
-  const fileStream = fs.createReadStream(filePath);
-  const formData = new FormData();
-  formData.append("file", fileStream, fileName);
-  formData.append("model", "whisper-1");
-  formData.append("language", "en");
+  try {
+    const fileStream = fs.createReadStream(filePath);
+    const formData = new FormData();
+    formData.append("file", fileStream, fileName);
+    formData.append("model", "whisper-1");
+    formData.append("language", "en");
 
-  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-	  ...formData.getHeaders(),
-    },
-    body: formData,
-  });
+    const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        ...formData.getHeaders(),
+      },
+      body: formData,
+    });
 
-  if (!response.ok) {
-    const errorData = await response.json();
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new TranscriptProcessingError(
+        errorData.error?.message || "Transcription failed",
+        response.status,
+      );
+    }
+
+    const transcriptionData = (await response.json()) as { text?: string };
+    const text = (transcriptionData.text || "").trim();
+
+    if (!text) {
+      throw new TranscriptProcessingError("OpenAI returned an empty transcription", 502);
+    }
+
+    return text;
+  } catch (error) {
+    if (error instanceof TranscriptProcessingError) {
+      throw error;
+    }
     throw new TranscriptProcessingError(
-      errorData.error?.message || "Transcription failed",
-      response.status,
+      error instanceof Error ? error.message : "Failed to transcribe audio",
+      500,
     );
   }
-
-  const transcriptionData = (await response.json()) as { text?: string };
-  const text = (transcriptionData.text || "").trim();
-
-  if (!text) {
-    throw new TranscriptProcessingError("OpenAI returned an empty transcription", 502);
-  }
-
-  return text;
 };
 
 const transcribeAudio = async ({
