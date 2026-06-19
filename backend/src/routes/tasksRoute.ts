@@ -54,6 +54,7 @@ const router = express.Router();
  */
 router.get("/meetings/:meetingId/tasks", authenticate, tasksController.getByMeetingId.bind(tasksController));
 router.post("/meetings/:meetingId/tasks", authenticate, tasksController.create.bind(tasksController));
+router.post("/meetings/:meetingId/suggest-tasks", authenticate, tasksController.suggestFromTranscript.bind(tasksController));
 
 /**
  * @openapi

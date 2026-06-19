@@ -2,9 +2,11 @@ import { Response } from "express";
 import mongoose from "mongoose";
 import tasksModel from "../models/tasksModel";
 import meetingsModel from "../models/meetingsModel";
+import transcriptModel from "../models/transcriptModel";
 import usersModel from "../models/usersModel";
 import { AuthRequest } from "../middleware/authMiddleware";
 import baseController from "./baseController";
+import mingoAgentService from "../services/LLM/mingoAgentService";
 
 type CachedGitHubTasks = {
   expiresAt: number;
@@ -651,6 +653,64 @@ class tasksController extends baseController {
       : "To Do";
   }
 
+  private async createGitHubIssue(
+    authorization: string,
+    repoFullName: string,
+    title: string,
+    body?: string,
+  ): Promise<number | null> {
+    try {
+      const response = await fetch(
+        `https://api.github.com/repos/${repoFullName}/issues`,
+        {
+          method: "POST",
+          headers: {
+            Accept: "application/vnd.github+json",
+            Authorization: authorization,
+            "Content-Type": "application/json",
+            "User-Agent": "Mingo",
+            "X-GitHub-Api-Version": "2022-11-28",
+          },
+          body: JSON.stringify({ title, body: body || "" }),
+        },
+      );
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const data = (await response.json()) as { number?: number };
+      return typeof data.number === "number" ? data.number : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async suggestFromTranscript(req: AuthRequest, res: Response) {
+    const { meetingId } = req.params;
+
+    if (!meetingId) {
+      res.status(400).json({ error: "Meeting ID is required" });
+      return;
+    }
+
+    try {
+      const transcript = await transcriptModel.findOne({ meetingID: meetingId });
+
+      if (!transcript?.content) {
+        return res.json({ tasks: [] });
+      }
+
+      const result = await mingoAgentService.generateTaskSuggestions(
+        transcript.content,
+      );
+      return res.json(result);
+    } catch (err) {
+      console.error("Error suggesting tasks from transcript:", err);
+      return res.json({ tasks: [] });
+    }
+  }
+
   private buildTaskPayload(
     body: any,
     fallbackOwnerId?: string,
@@ -847,8 +907,28 @@ class tasksController extends baseController {
           data: githubTasks,
         });
       }
+      const normalizedRequestedRepos = new Set(
+        requestedRepoNames.map((r) => this.normalizeRepoName(r)),
+      );
+
+      // When a specific repo is selected, show only local tasks linked to that repo
+      const filteredLocalTasks =
+        normalizedRequestedRepos.size === 0
+          ? localTasks
+          : localTasks.filter((task: any) => {
+              if (!task.gitHubRepoName) return false;
+              const taskRepo = this.normalizeRepoName(task.gitHubRepoName);
+              return (
+                normalizedRequestedRepos.has(taskRepo) ||
+                // also match on short name (e.g. "tictactoe" matches "owner/tictactoe")
+                [...normalizedRequestedRepos].some(
+                  (r) => r === taskRepo || r.endsWith(`/${taskRepo}`) || taskRepo.endsWith(`/${r}`),
+                )
+              );
+            });
+
       const localGithubKeys = new Set(
-        localTasks
+        filteredLocalTasks
           .filter((task: any) => task.gitHubIssueId && task.gitHubRepoName)
           .map(
             (task: any) =>
@@ -874,7 +954,7 @@ class tasksController extends baseController {
       );
 
       return res.json(
-        [...localTasks, ...remoteOnlyGithubTasks].sort((left: any, right: any) => {
+        [...filteredLocalTasks, ...remoteOnlyGithubTasks].sort((left: any, right: any) => {
           const leftTime = new Date(left.updatedAt || left.createdAt || 0).getTime();
           const rightTime = new Date(right.updatedAt || right.createdAt || 0).getTime();
           return rightTime - leftTime;
@@ -916,6 +996,36 @@ class tasksController extends baseController {
       const task = await this.model.create(payload);
       meeting.tasks.push(task._id as mongoose.Types.ObjectId);
       await meeting.save();
+
+      const repoFullName =
+        typeof req.body.gitHubRepoFullName === "string" &&
+        req.body.gitHubRepoFullName.trim()
+          ? req.body.gitHubRepoFullName.trim()
+          : null;
+
+      if (req.body.createGitHubIssue === true && repoFullName && req.user?._id) {
+        const user = await usersModel.findById(req.user._id);
+        const authorization = this.getGitHubAuthorization(user);
+
+        if (authorization) {
+          const issueNumber = await this.createGitHubIssue(
+            authorization,
+            repoFullName,
+            task.title || "",
+            task.description,
+          );
+
+          if (issueNumber !== null) {
+            const [repoOwner, repoName] = repoFullName.split("/");
+            await this.model.findByIdAndUpdate(task._id, {
+              gitHubIssueId: issueNumber,
+              gitHubRepoName: repoName ?? repoFullName,
+              gitHubRepoOwner: repoOwner ? req.user._id : undefined,
+            });
+            (task as any).gitHubIssueId = issueNumber;
+          }
+        }
+      }
 
       res.status(201).json(task);
     } catch (err) {

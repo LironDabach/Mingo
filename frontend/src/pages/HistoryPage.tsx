@@ -17,6 +17,8 @@ type RawMeeting = {
   participants?: unknown[];
   inviteEmails?: string[];
   tasks?: unknown[];
+  transcriptId?: string;
+  mingoAgentId?: string;
 };
 
 type RawParticipant = {
@@ -39,6 +41,8 @@ type Meeting = {
   tasksCount: number;
   summary: string;
   repository: string;
+  isTranscribed: boolean;
+  transcript?: string;
 };
 
 const tabs: FilterTab[] = ['All', 'Last Week', 'Last Month', 'Upcoming'];
@@ -108,6 +112,7 @@ const normalizeMeeting = (meeting: RawMeeting): Meeting => {
     tasksCount: Array.isArray(meeting.tasks) ? meeting.tasks.length : 0,
     summary: meeting.summary || '',
     repository: meeting.gitHubRepoName || '-',
+    isTranscribed: Boolean(meeting.transcriptId && !meeting.mingoAgentId),
   };
 };
 
@@ -207,6 +212,25 @@ const HistoryPage = () => {
 
     setSelectedMeeting(meeting);
     setSummaryError('');
+
+    if (meeting.isTranscribed) {
+      if (meeting.transcript) return;
+      try {
+        setIsSummaryLoading(true);
+        const response = await fetchWithAuth(`/api/transcripts/${meeting.id}`);
+        if (!response.ok) throw new Error('Unable to load transcript right now.');
+        const data = (await response.json()) as { content?: string };
+        const transcript = data.content || 'No transcript available for this meeting.';
+        const updatedMeeting = { ...meeting, transcript };
+        setSelectedMeeting(updatedMeeting);
+        setMeetings((prev) => prev.map((m) => (m.id === meeting.id ? updatedMeeting : m)));
+      } catch (err) {
+        setSummaryError(err instanceof Error ? err.message : 'Unable to load transcript right now.');
+      } finally {
+        setIsSummaryLoading(false);
+      }
+      return;
+    }
 
     if (meeting.summary) {
       return;
@@ -386,10 +410,16 @@ const HistoryPage = () => {
                   onClick={() => openSummary(meeting)}
                   disabled={meeting.status !== 'Completed'}
                 >
-                  <div className={`history-row-icon ${meeting.status === 'Upcoming' ? 'history-row-icon--upcoming' : ''}`}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
-                    </svg>
+                  <div className={`history-row-icon ${meeting.status === 'Upcoming' ? 'history-row-icon--upcoming' : ''} ${meeting.isTranscribed ? 'history-row-icon--transcribed' : ''}`}>
+                    {meeting.isTranscribed ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+                      </svg>
+                    )}
                   </div>
 
                   <div className="history-row-info">
@@ -409,10 +439,19 @@ const HistoryPage = () => {
 
                   <div className="history-row-right">
                     {meeting.status === 'Completed' ? (
-                      <span className="history-badge history-badge--completed">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                        {meeting.duration}
-                      </span>
+                      meeting.isTranscribed ? (
+                        <span className="history-badge history-badge--transcribed">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
+                          </svg>
+                          Transcribed
+                        </span>
+                      ) : (
+                        <span className="history-badge history-badge--completed">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                          {meeting.duration}
+                        </span>
+                      )
                     ) : (
                       <span className="history-badge history-badge--upcoming">{meeting.status}</span>
                     )}
@@ -441,8 +480,10 @@ const HistoryPage = () => {
 
             <div className="meeting-summary__header">
               <div>
-                <span className="meeting-summary__eyebrow">Meeting Summary</span>
-                <h2>📝 {selectedMeeting.title}</h2>
+                <span className="meeting-summary__eyebrow">
+                  {selectedMeeting.isTranscribed ? 'Transcribed Meeting' : 'Meeting Summary'}
+                </span>
+                <h2>{selectedMeeting.isTranscribed ? '🎙️' : '📝'} {selectedMeeting.title}</h2>
               </div>
             </div>
 
@@ -461,20 +502,35 @@ const HistoryPage = () => {
               </article>
               <article className="meeting-summary__fact">
                 <strong>Participants</strong>
-                <span>{selectedMeeting.participants}</span>
+                <span>{selectedMeeting.participants || '—'}</span>
               </article>
             </div>
 
-            <article className="meeting-summary__card">
-              <h3>✨ Summary</h3>
-              {isSummaryLoading ? (
-                <p>Loading summary...</p>
-              ) : summaryError ? (
-                <p>{summaryError}</p>
-              ) : (
-                <p>{selectedMeeting.summary || 'No summary is available for this meeting yet.'}</p>
-              )}
-            </article>
+            {selectedMeeting.isTranscribed ? (
+              <article className="meeting-summary__card">
+                <h3>📄 Transcript</h3>
+                {isSummaryLoading ? (
+                  <p>Loading transcript...</p>
+                ) : summaryError ? (
+                  <p>{summaryError}</p>
+                ) : (
+                  <p className="history-transcript-text">
+                    {selectedMeeting.transcript || 'No transcript available for this meeting.'}
+                  </p>
+                )}
+              </article>
+            ) : (
+              <article className="meeting-summary__card">
+                <h3>✨ Summary</h3>
+                {isSummaryLoading ? (
+                  <p>Loading summary...</p>
+                ) : summaryError ? (
+                  <p>{summaryError}</p>
+                ) : (
+                  <p>{selectedMeeting.summary || 'No summary is available for this meeting yet.'}</p>
+                )}
+              </article>
+            )}
 
             <article className="meeting-summary__card">
               <h3>👥 Participants Who Attended</h3>
@@ -489,10 +545,12 @@ const HistoryPage = () => {
               </div>
             </article>
 
-            <article className="meeting-summary__card">
-              <h3>✅ Tasks</h3>
-              <p>{selectedMeeting.tasksCount} tasks are connected to this meeting.</p>
-            </article>
+            {!selectedMeeting.isTranscribed && (
+              <article className="meeting-summary__card">
+                <h3>✅ Tasks</h3>
+                <p>{selectedMeeting.tasksCount} tasks are connected to this meeting.</p>
+              </article>
+            )}
           </div>
         </div>
       )}
