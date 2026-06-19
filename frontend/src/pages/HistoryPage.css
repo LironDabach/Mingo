@@ -384,6 +384,37 @@
   color: #2563eb;
 }
 
+.history-badge--transcribed {
+  background: #f3e8ff;
+  color: #7c3aed;
+}
+
+.history-row-icon--transcribed {
+  background: #f3e8ff;
+  color: #7c3aed;
+}
+
+.history-transcript-text {
+  white-space: pre-wrap;
+  line-height: 1.7;
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.history-transcript-text::-webkit-scrollbar {
+  width: 6px;
+}
+
+.history-transcript-text::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.history-transcript-text::-webkit-scrollbar-thumb {
+  background: #d8b4fe;
+  border-radius: 999px;
+}
+
 .history-tasks-badge {
   font-size: 11px;
   font-weight: 600;

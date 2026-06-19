@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
-import type { ChangeEvent, DragEvent, FormEvent } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import type { ChangeEvent, DragEvent } from 'react';
 import { fetchWithAuth, getStoredUser, parseResponseBody } from '../../lib/auth';
 import '../StartMeetingModal/StartMeetingModal.css';
+import '../../pages/MeetingPage.css';
 import './UploadMeetingModal.css';
 
 interface UploadMeetingModalProps {
@@ -29,12 +30,48 @@ type GitHubRepository = {
   private: boolean;
 };
 
+type SuggestedTask = { title: string; description: string };
+
+type UploadResult = {
+  meeting: {
+    _id: string;
+    title: string;
+    date: string;
+    duration?: number;
+    gitHubRepoName?: string;
+    participants: string[];
+    inviteEmails: string[];
+  };
+  transcript: { _id: string; content: string };
+  text: string;
+};
+
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
 const formatFileSize = (bytes: number) => {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const formatDate = (dateStr: string) =>
+  new Date(dateStr).toLocaleDateString('en-US', {
+    weekday: 'short',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
+const formatTranscript = (text: string) =>
+  text
+    .replace(/([.!?])\s+([A-Z])/g, '$1\n\n$2')
+    .trim();
+
+const formatDuration = (seconds: number) => {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
 };
 
 const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
@@ -52,6 +89,15 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
   const [reposLoadError, setReposLoadError] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [result, setResult] = useState<UploadResult | null>(null);
+
+  const [suggestedTasks, setSuggestedTasks] = useState<SuggestedTask[]>([]);
+  const [selectedTaskIndices, setSelectedTaskIndices] = useState<Set<number>>(new Set());
+  const [isSuggestingTasks, setIsSuggestingTasks] = useState(false);
+  const [isCreatingTasks, setIsCreatingTasks] = useState(false);
+  const [tasksCreated, setTasksCreated] = useState(false);
+  const [taskCreateError, setTaskCreateError] = useState('');
+  const [summaryRepo, setSummaryRepo] = useState('');
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -166,6 +212,65 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
     }
   };
 
+  const fetchTaskSuggestions = async (meetingId: string) => {
+    setIsSuggestingTasks(true);
+    try {
+      const response = await fetchWithAuth(`/api/meetings/${meetingId}/suggest-tasks`, { method: 'POST' });
+      if (!response.ok) return;
+      const data = (await response.json()) as { tasks: SuggestedTask[] };
+      const tasks = data.tasks ?? [];
+      setSuggestedTasks(tasks);
+      setSelectedTaskIndices(new Set(tasks.map((_, i) => i)));
+    } catch {
+      // silently — task suggestions are optional
+    } finally {
+      setIsSuggestingTasks(false);
+    }
+  };
+
+  const toggleTaskIndex = (index: number) => {
+    setSelectedTaskIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const handleCreateTasks = async () => {
+    if (!result || selectedTaskIndices.size === 0 || isCreatingTasks) return;
+
+    const selectedRepoFullName =
+      repositories.find((r) => r.name === summaryRepo)?.fullName ?? null;
+
+    setIsCreatingTasks(true);
+    setTaskCreateError('');
+
+    const tasksToCreate = suggestedTasks.filter((_, i) => selectedTaskIndices.has(i));
+
+    try {
+      await Promise.all(
+        tasksToCreate.map((task) =>
+          fetchWithAuth(`/api/meetings/${result.meeting._id}/tasks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: task.title,
+              description: task.description,
+              createGitHubIssue: Boolean(selectedRepoFullName),
+              gitHubRepoFullName: selectedRepoFullName,
+            }),
+          }),
+        ),
+      );
+      setTasksCreated(true);
+    } catch {
+      setTaskCreateError('Some tasks could not be created. Please try again.');
+    } finally {
+      setIsCreatingTasks(false);
+    }
+  };
+
   const pendingEmail = emailInput.trim().toLowerCase();
   const isCreateDisabled =
     isSubmitting ||
@@ -173,7 +278,7 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
     !file ||
     Boolean(pendingEmail && !emailPattern.test(pendingEmail));
 
-  const handleCreate = async (event: FormEvent) => {
+  const handleCreate = async (event: React.FormEvent) => {
     event.preventDefault();
     if (isSubmitting || !file || !title.trim()) return;
 
@@ -210,7 +315,10 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
         throw new Error(message);
       }
 
-      onClose();
+      const data = (await response.json()) as UploadResult;
+      setResult(data);
+      setSummaryRepo(data.meeting.gitHubRepoName ?? '');
+      void fetchTaskSuggestions(data.meeting._id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to upload meeting right now.');
     } finally {
@@ -218,6 +326,142 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
     }
   };
 
+  // ─── Summary view ────────────────────────────────────────────────────────────
+  if (result) {
+    const { meeting, text } = result;
+    return (
+      <div className="meeting-summary-modal__overlay" onClick={onClose}>
+        <div className="meeting-summary-modal upload-summary-modal" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className="meeting-summary-modal__close"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            ×
+          </button>
+
+          <div className="meeting-summary__header">
+            <div>
+              <span className="meeting-summary__eyebrow">Meeting Summary</span>
+              <h2>📝 {meeting.title}</h2>
+            </div>
+          </div>
+
+          <div className="meeting-summary__facts">
+            <article className="meeting-summary__fact">
+              <strong>Date</strong>
+              <span>{formatDate(meeting.date)}</span>
+            </article>
+            <article className="meeting-summary__fact">
+              <strong>Duration</strong>
+              <span>{meeting.duration ? formatDuration(meeting.duration) : '—'}</span>
+            </article>
+            <article className="meeting-summary__fact">
+              <strong>Repository</strong>
+              <span>{meeting.gitHubRepoName || '—'}</span>
+            </article>
+            <article className="meeting-summary__fact">
+              <strong>Attendees</strong>
+              <span>{attendees.length > 0 ? attendees.length : '—'}</span>
+            </article>
+          </div>
+
+          <div className="upload-summary-columns">
+            <article className="meeting-summary__card upload-transcript-card">
+              <h3>📄 Transcript</h3>
+              <p className="upload-transcript-text">{formatTranscript(text)}</p>
+            </article>
+
+            <div className="upload-summary-right">
+              {attendees.length > 0 && (
+                <article className="meeting-summary__card">
+                  <h3>👥 Attendees</h3>
+                  <div className="meeting-summary__participants">
+                    {attendees.map((a) => (
+                      <span key={a.email}>{a.displayName}</span>
+                    ))}
+                  </div>
+                </article>
+              )}
+
+              <article className="meeting-summary__card">
+                <h3>
+                  ✅ Suggested Tasks
+                  {isSuggestingTasks && <span className="upload-tasks-loading"> — analyzing…</span>}
+                </h3>
+
+                <div className="upload-repo-selector">
+                  <label htmlFor="summary-repo-select">GitHub Repository</label>
+                  <select
+                    id="summary-repo-select"
+                    value={summaryRepo}
+                    onChange={(e) => setSummaryRepo(e.target.value)}
+                    disabled={isCreatingTasks || tasksCreated}
+                  >
+                    <option value="">— No repository (save locally only) —</option>
+                    {repositories.map((r) => (
+                      <option key={r.id} value={r.name}>{r.fullName}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {!isSuggestingTasks && suggestedTasks.length === 0 && (
+                  <p className="meeting-summary__empty">No tasks identified in this transcript.</p>
+                )}
+
+                {suggestedTasks.length > 0 && (
+                  <div className="upload-tasks-list">
+                    {suggestedTasks.map((task, i) => (
+                      <label key={i} className="upload-task-item">
+                        <input
+                          type="checkbox"
+                          checked={selectedTaskIndices.has(i)}
+                          onChange={() => toggleTaskIndex(i)}
+                        />
+                        <div className="upload-task-text">
+                          <strong>{task.title}</strong>
+                          {task.description && <span>{task.description}</span>}
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                )}
+
+                {taskCreateError && (
+                  <p className="start-meeting-error upload-task-error">{taskCreateError}</p>
+                )}
+              </article>
+            </div>
+          </div>
+
+          <div className="meeting-summary-modal__actions">
+            {tasksCreated ? (
+              <span className="upload-tasks-done">✓ Tasks created successfully</span>
+            ) : selectedTaskIndices.size > 0 ? (
+              <button
+                type="button"
+                className="meeting-summary-modal__mail"
+                onClick={handleCreateTasks}
+                disabled={isCreatingTasks}
+              >
+                {isCreatingTasks
+                  ? 'Creating…'
+                  : summaryRepo
+                    ? `Create ${selectedTaskIndices.size} Task${selectedTaskIndices.size > 1 ? 's' : ''} in ${summaryRepo}`
+                    : `Save ${selectedTaskIndices.size} Task${selectedTaskIndices.size > 1 ? 's' : ''} Locally`}
+              </button>
+            ) : null}
+            <button type="button" className="meeting-summary-modal__home" onClick={onClose}>
+              Back to Home
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Upload form ─────────────────────────────────────────────────────────────
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div

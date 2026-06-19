@@ -1793,6 +1793,85 @@ class MingoAgentService {
     }
 
   }
+
+  async generateTaskSuggestions(
+    transcriptContent: string,
+  ): Promise<{ tasks: Array<{ title: string; description: string }> }> {
+    if (!transcriptContent?.trim()) {
+      return { tasks: [] };
+    }
+
+    const truncated = transcriptContent.slice(0, 4000);
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      console.warn("[TaskSuggestions] OPENAI_API_KEY not set");
+      return { tasks: [] };
+    }
+
+    try {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          temperature: 0.1,
+          max_tokens: 700,
+          response_format: { type: "json_object" },
+          messages: [
+            {
+              role: "system",
+              content:
+                'You extract action items from meeting transcripts. Return ONLY valid JSON in this exact shape: {"tasks":[{"title":"...","description":"..."}]}. Limit to 8 tasks. If none found return {"tasks":[]}.',
+            },
+            {
+              role: "user",
+              content: `Extract action items from this transcript:\n\n${truncated}`,
+            },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("[TaskSuggestions] OpenAI error:", response.status);
+        return { tasks: [] };
+      }
+
+      const data = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const content = data.choices?.[0]?.message?.content?.trim() ?? "";
+      const parsed: unknown = JSON.parse(content);
+
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        !Array.isArray((parsed as { tasks?: unknown }).tasks)
+      ) {
+        return { tasks: [] };
+      }
+
+      const tasks = ((parsed as { tasks: unknown[] }).tasks)
+        .filter(
+          (item): item is { title: unknown; description?: unknown } =>
+            Boolean(item) && typeof item === "object",
+        )
+        .map((item) => ({
+          title: typeof item.title === "string" ? item.title.trim() : "",
+          description:
+            typeof item.description === "string" ? item.description.trim() : "",
+        }))
+        .filter((task) => task.title.length > 0)
+        .slice(0, 8);
+
+      return { tasks };
+    } catch (err) {
+      console.error("[TaskSuggestions] Error:", err);
+      return { tasks: [] };
+    }
+  }
 }
 
 export default new MingoAgentService();
