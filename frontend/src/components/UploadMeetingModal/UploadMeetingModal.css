@@ -2,13 +2,129 @@
   max-width: 920px;
 }
 
+.upload-meeting-subtitle {
+  font-size: 14px;
+  color: #94a3b8;
+  margin-top: -24px;
+  margin-bottom: 28px;
+}
+
+/* Upload zone */
 .upload-meeting-zone {
   width: 100%;
-  min-height: 150px;
+  min-height: 180px;
   border: 2px dashed #93c5fd;
   background: #f8fbff;
 }
 
-.upload-meeting-zone:hover {
+.upload-meeting-zone--dragging {
+  border-color: #3b82f6;
+  border-style: solid;
   background: #eff6ff;
+}
+
+.upload-meeting-zone--has-file {
+  border-style: solid;
+  border-color: #93c5fd;
+  background: #f0f7ff;
+  cursor: default;
+}
+
+/* Empty state */
+.upload-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.upload-cloud-icon {
+  width: 44px;
+  height: 44px;
+  color: #93c5fd;
+  margin-bottom: 4px;
+}
+
+/* File selected state */
+.upload-file-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.upload-file-icon {
+  color: #3b82f6;
+  margin-bottom: 4px;
+}
+
+.upload-file-icon svg {
+  width: 40px;
+  height: 40px;
+}
+
+.upload-filesize {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.upload-remove-file {
+  margin-top: 4px;
+  background: none;
+  border: 1px solid #fca5a5;
+  color: #ef4444;
+  border-radius: 6px;
+  padding: 3px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.upload-remove-file:hover {
+  background: #fef2f2;
+}
+
+/* Optional badge */
+.upload-optional-badge {
+  font-size: 11px;
+  font-weight: 500;
+  color: #94a3b8;
+  background: #f1f5f9;
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+/* Repos error when GitHub not connected */
+.upload-repos-error {
+  margin-top: 0;
+  padding: 10px 14px;
+  background: #fef9f0;
+  border: 1px solid #fed7aa;
+  border-radius: 9px;
+  color: #92400e;
+}
+
+/* Submit button */
+.upload-submit-btn {
+  gap: 8px;
+}
+
+/* Spinner */
+.upload-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: upload-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes upload-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
