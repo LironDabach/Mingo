@@ -415,6 +415,52 @@
   border-radius: 999px;
 }
 
+.history-tasks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.history-task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.history-task-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.history-task-dot--todo {
+  background: #d1d5db;
+  border: 2px solid #9ca3af;
+}
+
+.history-task-dot--done {
+  background: #16a34a;
+}
+
+.history-task-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+  color: #111827;
+}
+
+.history-task-tag {
+  font-size: 11px;
+  color: #6b7280;
+  background: #f3f4f6;
+  padding: 1px 6px;
+  border-radius: 4px;
+  align-self: flex-start;
+}
+
 .history-tasks-badge {
   font-size: 11px;
   font-weight: 600;
@@ -422,6 +468,174 @@
   background: #f3f4f6;
   padding: 4px 10px;
   border-radius: 6px;
+}
+
+/* ===== Summary Modal Redesign ===== */
+.history-summary-modal {
+  width: min(1020px, 100%);
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+}
+
+/* Header */
+.history-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 28px 28px 24px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.history-modal-header--transcribed {
+  background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);
+  border-bottom-color: #e9d5ff;
+}
+
+.history-modal-header--completed {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border-bottom-color: #bae6fd;
+}
+
+.history-modal-header__left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.history-modal-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7c3aed;
+}
+
+.history-modal-header--completed .history-modal-eyebrow {
+  color: #0369a1;
+}
+
+.history-modal-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  color: #111827;
+  line-height: 1.2;
+}
+
+.history-modal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.history-modal-sep {
+  color: #d1d5db;
+}
+
+.history-modal-close {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.7);
+  color: #6b7280;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.history-modal-close:hover {
+  background: #fff;
+  color: #111827;
+}
+
+.history-modal-close svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Body — two-column grid */
+.history-modal-body {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 0;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+}
+
+.history-modal-main {
+  padding: 20px 20px 20px 24px;
+  overflow-y: auto;
+  border-right: 1px solid #f3f4f6;
+}
+
+.history-modal-side {
+  padding: 20px 24px 20px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: #fafafa;
+}
+
+/* Cards */
+.history-modal-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 16px 18px;
+  background: #fff;
+}
+
+.history-modal-card--full {
+  height: 100%;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+}
+
+.history-modal-card--full .history-transcript-text,
+.history-modal-card--full .history-modal-text {
+  flex: 1;
+}
+
+.history-modal-card-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9ca3af;
+  margin: 0 0 12px;
+}
+
+.history-modal-text {
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.7;
+  margin: 0;
+}
+
+.history-modal-loading {
+  font-size: 13px;
+  color: #9ca3af;
+  margin: 0;
+}
+
+.history-modal-error {
+  font-size: 13px;
+  color: #dc2626;
+  margin: 0;
 }
 
 /* ===== Responsive ===== */

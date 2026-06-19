@@ -47,6 +47,18 @@ type Meeting = {
 
 const tabs: FilterTab[] = ['All', 'Last Week', 'Last Month', 'Upcoming'];
 
+type MeetingTask = {
+  _id: string;
+  title?: string;
+  description?: string;
+  status?: string;
+  gitHubIssueId?: number;
+  gitHubRepoName?: string;
+};
+
+const formatTranscript = (text: string) =>
+  text.replace(/([.!?])\s+([A-Z])/g, '$1\n\n$2').trim();
+
 const formatDuration = (duration?: number) => {
   if (typeof duration !== 'number' || Number.isNaN(duration)) {
     return '-';
@@ -127,6 +139,8 @@ const HistoryPage = () => {
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState('');
   const [isCreatingDemo, setIsCreatingDemo] = useState(false);
+  const [meetingTasks, setMeetingTasks] = useState<MeetingTask[]>([]);
+  const [isLoadingTasks, setIsLoadingTasks] = useState(false);
 
   useEffect(() => {
     const loadMeetings = async () => {
@@ -205,6 +219,20 @@ const HistoryPage = () => {
     return result;
   }, [activeTab, meetings, now, oneMonthAgo, oneWeekAgo, search]);
 
+  const loadMeetingTasks = async (meetingId: string) => {
+    try {
+      setIsLoadingTasks(true);
+      const response = await fetchWithAuth(`/api/meetings/${meetingId}/tasks`);
+      if (!response.ok) return;
+      const data = (await response.json()) as MeetingTask[];
+      setMeetingTasks(Array.isArray(data) ? data : []);
+    } catch {
+      // tasks are optional — don't block summary
+    } finally {
+      setIsLoadingTasks(false);
+    }
+  };
+
   const openSummary = async (meeting: Meeting) => {
     if (meeting.status !== 'Completed') {
       return;
@@ -212,6 +240,8 @@ const HistoryPage = () => {
 
     setSelectedMeeting(meeting);
     setSummaryError('');
+    setMeetingTasks([]);
+    void loadMeetingTasks(meeting.id);
 
     if (meeting.isTranscribed) {
       if (meeting.transcript) return;
@@ -467,90 +497,106 @@ const HistoryPage = () => {
       </main>
 
       {selectedMeeting && (
-        <div className="meeting-summary-modal__overlay">
-          <div className="meeting-summary-modal">
-            <button
-              type="button"
-              className="meeting-summary-modal__close"
-              onClick={() => setSelectedMeeting(null)}
-              aria-label="Close summary"
-            >
-              x
-            </button>
+        <div className="meeting-summary-modal__overlay" onClick={() => setSelectedMeeting(null)}>
+          <div className="meeting-summary-modal history-summary-modal" onClick={(e) => e.stopPropagation()}>
 
-            <div className="meeting-summary__header">
-              <div>
-                <span className="meeting-summary__eyebrow">
-                  {selectedMeeting.isTranscribed ? 'Transcribed Meeting' : 'Meeting Summary'}
+            {/* ── Header ── */}
+            <div className={`history-modal-header ${selectedMeeting.isTranscribed ? 'history-modal-header--transcribed' : 'history-modal-header--completed'}`}>
+              <div className="history-modal-header__left">
+                <span className="history-modal-eyebrow">
+                  {selectedMeeting.isTranscribed ? '🎙️ Transcribed Meeting' : '📝 Meeting Summary'}
                 </span>
-                <h2>{selectedMeeting.isTranscribed ? '🎙️' : '📝'} {selectedMeeting.title}</h2>
+                <h2 className="history-modal-title">{selectedMeeting.title}</h2>
+                <div className="history-modal-meta">
+                  <span>{selectedMeeting.dateLabel}, {selectedMeeting.timeLabel}</span>
+                  {selectedMeeting.duration !== '-' && <><span className="history-modal-sep">·</span><span>{selectedMeeting.duration}</span></>}
+                  {selectedMeeting.repository !== '-' && <><span className="history-modal-sep">·</span><span>{selectedMeeting.repository}</span></>}
+                </div>
               </div>
+              <button
+                type="button"
+                className="history-modal-close"
+                onClick={() => setSelectedMeeting(null)}
+                aria-label="Close"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
             </div>
 
-            <div className="meeting-summary__facts">
-              <article className="meeting-summary__fact">
-                <strong>Date</strong>
-                <span>{selectedMeeting.dateLabel}, {selectedMeeting.timeLabel}</span>
-              </article>
-              <article className="meeting-summary__fact">
-                <strong>Duration</strong>
-                <span>{selectedMeeting.duration}</span>
-              </article>
-              <article className="meeting-summary__fact">
-                <strong>Repository</strong>
-                <span>{selectedMeeting.repository}</span>
-              </article>
-              <article className="meeting-summary__fact">
-                <strong>Participants</strong>
-                <span>{selectedMeeting.participants || '—'}</span>
-              </article>
-            </div>
-
-            {selectedMeeting.isTranscribed ? (
-              <article className="meeting-summary__card">
-                <h3>📄 Transcript</h3>
-                {isSummaryLoading ? (
-                  <p>Loading transcript...</p>
-                ) : summaryError ? (
-                  <p>{summaryError}</p>
+            {/* ── Body ── */}
+            <div className="history-modal-body">
+              {/* Left column */}
+              <div className="history-modal-main">
+                {selectedMeeting.isTranscribed ? (
+                  <article className="history-modal-card history-modal-card--full">
+                    <h3 className="history-modal-card-title">Transcript</h3>
+                    {isSummaryLoading ? (
+                      <p className="history-modal-loading">Loading transcript…</p>
+                    ) : summaryError ? (
+                      <p className="history-modal-error">{summaryError}</p>
+                    ) : (
+                      <p className="history-transcript-text">
+                        {selectedMeeting.transcript
+                          ? formatTranscript(selectedMeeting.transcript)
+                          : 'No transcript available for this meeting.'}
+                      </p>
+                    )}
+                  </article>
                 ) : (
-                  <p className="history-transcript-text">
-                    {selectedMeeting.transcript || 'No transcript available for this meeting.'}
-                  </p>
-                )}
-              </article>
-            ) : (
-              <article className="meeting-summary__card">
-                <h3>✨ Summary</h3>
-                {isSummaryLoading ? (
-                  <p>Loading summary...</p>
-                ) : summaryError ? (
-                  <p>{summaryError}</p>
-                ) : (
-                  <p>{selectedMeeting.summary || 'No summary is available for this meeting yet.'}</p>
-                )}
-              </article>
-            )}
-
-            <article className="meeting-summary__card">
-              <h3>👥 Participants Who Attended</h3>
-              <div className="meeting-summary__participants">
-                {selectedMeeting.participantLabels.length > 0 ? (
-                  selectedMeeting.participantLabels.map((participant) => (
-                    <span key={participant}>{participant}</span>
-                  ))
-                ) : (
-                  <p className="meeting-summary__empty">No participants were saved for this meeting.</p>
+                  <article className="history-modal-card history-modal-card--full">
+                    <h3 className="history-modal-card-title">Summary</h3>
+                    {isSummaryLoading ? (
+                      <p className="history-modal-loading">Generating summary…</p>
+                    ) : summaryError ? (
+                      <p className="history-modal-error">{summaryError}</p>
+                    ) : (
+                      <p className="history-modal-text">{selectedMeeting.summary || 'No summary available yet.'}</p>
+                    )}
+                  </article>
                 )}
               </div>
-            </article>
 
-            {!selectedMeeting.isTranscribed && (
-              <article className="meeting-summary__card">
-                <h3>✅ Tasks</h3>
-                <p>{selectedMeeting.tasksCount} tasks are connected to this meeting.</p>
-              </article>
-            )}
+              {/* Right column */}
+              <div className="history-modal-side">
+                <article className="history-modal-card">
+                  <h3 className="history-modal-card-title">Participants</h3>
+                  {selectedMeeting.participantLabels.length > 0 ? (
+                    <div className="meeting-summary__participants">
+                      {selectedMeeting.participantLabels.map((p) => (
+                        <span key={p}>{p}</span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="meeting-summary__empty">No participants recorded.</p>
+                  )}
+                </article>
+
+                <article className="history-modal-card">
+                  <h3 className="history-modal-card-title">Tasks</h3>
+                  {isLoadingTasks ? (
+                    <p className="history-modal-loading">Loading tasks…</p>
+                  ) : meetingTasks.length > 0 ? (
+                    <div className="history-tasks-list">
+                      {meetingTasks.map((task) => (
+                        <div key={task._id} className="history-task-item">
+                          <span className={`history-task-dot history-task-dot--${task.status === 'Done' ? 'done' : 'todo'}`} />
+                          <div className="history-task-text">
+                            <span>{task.title || task.description || 'Untitled task'}</span>
+                            {task.gitHubIssueId && (
+                              <span className="history-task-tag">{task.gitHubRepoName || 'GitHub'}-{task.gitHubIssueId}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="meeting-summary__empty">No tasks for this meeting.</p>
+                  )}
+                </article>
+              </div>
+            </div>
           </div>
         </div>
       )}
