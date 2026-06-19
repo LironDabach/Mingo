@@ -35,7 +35,7 @@ class LlmService {
     const baseUrl = process.env.LLM_BASE_URL;
     const user = process.env.LLM_USER;
     const pass = process.env.LLM_PASS;
-    const timeoutMs = Number(process.env.LLM_TIMEOUT_MS || "15000");
+    const timeoutMs = Number(process.env.LLM_TIMEOUT_MS || "60000");
     const defaultModel = process.env.LLM_MODEL || "llama3.1:8b";
 
     if (!baseUrl || !user || !pass) {

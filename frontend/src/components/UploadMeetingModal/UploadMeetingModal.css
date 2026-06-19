@@ -107,6 +107,168 @@
   color: #92400e;
 }
 
+/* Repo selector in summary */
+.upload-repo-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.upload-repo-selector label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.upload-repo-selector select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #111827;
+  background: #f9fafb;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.upload-repo-selector select:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  background: #fff;
+}
+
+.upload-repo-selector select:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Transcript text */
+.upload-transcript-text {
+  white-space: pre-wrap;
+  line-height: 1.75;
+  font-size: 14px;
+  color: #374151;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 6px;
+  margin: 0;
+}
+
+.upload-transcript-text::-webkit-scrollbar {
+  width: 6px;
+}
+
+.upload-transcript-text::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.upload-transcript-text::-webkit-scrollbar-thumb {
+  background: #c3d6fb;
+  border-radius: 999px;
+}
+
+/* Summary two-column layout */
+.upload-summary-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 0;
+}
+
+.upload-summary-right {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.upload-transcript-card {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Suggested tasks list */
+.upload-tasks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.upload-task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f8fbff;
+  border: 1px solid #e5eef8;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.upload-task-item:hover {
+  background: #eff6ff;
+}
+
+.upload-task-item input[type='checkbox'] {
+  margin-top: 3px;
+  width: 15px;
+  height: 15px;
+  accent-color: #2563eb;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.upload-task-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.upload-task-text strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.4;
+}
+
+.upload-task-text span {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.upload-tasks-loading {
+  font-size: 12px;
+  font-weight: 400;
+  color: #94a3b8;
+}
+
+.upload-tasks-done {
+  font-size: 14px;
+  font-weight: 600;
+  color: #16a34a;
+}
+
+.upload-task-error {
+  margin-top: 8px;
+}
+
+.upload-summary-modal {
+  width: min(1040px, 100%);
+}
+
+@media (max-width: 700px) {
+  .upload-summary-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Submit button */
 .upload-submit-btn {
   gap: 8px;
