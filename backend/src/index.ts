@@ -67,7 +67,13 @@ const initApp = () => {
 
     const db = mongoose.connection;
     db.on("error", (error) => console.error("Mongo connection error:", error));
-    db.once("open", () => console.log("Connected to Database"));
+    db.once("open", () => {
+      console.log("Connected to Database");
+      // Drop stale non-sparse index so Mongoose recreates it with sparse:true
+      db.collection("tasks")
+        .dropIndex("gitHubIssueId_1")
+        .catch(() => { /* already dropped or doesn't exist — ignore */ });
+    });
   });
   return pr;
 };
