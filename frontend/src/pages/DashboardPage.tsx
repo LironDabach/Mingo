@@ -105,10 +105,10 @@ const formatDashboardMeetingDate = (value: string) => {
 
 const REPOSITORY_COLORS = ['#1d4ed8', '#2563eb', '#3b82f6', '#60a5fa', '#0284c7', '#0ea5e9'];
 
-const getRepositoryColor = (value?: string) => {
+const getRepositoryColor = (value?: string): string => {
   const seed = value?.trim() || 'manual';
   const hash = seed.split('').reduce((total, char) => total + char.charCodeAt(0), 0);
-  return REPOSITORY_COLORS[hash % REPOSITORY_COLORS.length];
+  return REPOSITORY_COLORS[hash % REPOSITORY_COLORS.length] ?? '#1d4ed8';
 };
 
 const formatRepositoryTag = (value?: string) => {
@@ -162,7 +162,7 @@ const normalizeDashboardMeeting = (meeting: RawMeeting, index = 0): DashboardMee
     repoTag: formatRepositoryTag(meeting.gitHubRepoName),
     topicsCount: meeting.topics?.length || 0,
     tasksCount: meeting.tasks?.length || 0,
-    gitHubRepoName: meeting.gitHubRepoName,
+    ...(meeting.gitHubRepoName !== undefined ? { gitHubRepoName: meeting.gitHubRepoName } : {}),
     participants: attendees.length,
     attendees,
   };
@@ -504,7 +504,8 @@ const DashboardPage = () => {
       <Header />
       <main className="dashboard-main">
         {/* Greeting */}
-        <h1 className="dashboard-greeting">Hi {firstName}! 👋</h1>
+        <h1 className="dashboard-greeting">Good to see you, {firstName}</h1>
+        <p className="dashboard-greeting-sub">Here's what's happening with your meetings today.</p>
 
         {/* Action Cards */}
         <div className="dashboard-actions">
@@ -516,50 +517,84 @@ const DashboardPage = () => {
               }
             }}
           >
-            <div className="action-card-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
-              </svg>
+            <div className="action-card-top">
+              <div className="action-card-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+                </svg>
+              </div>
+              {!hasActiveMeeting && (
+                <div className="action-card-arrow">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                    <polyline points="12 5 19 12 12 19" />
+                  </svg>
+                </div>
+              )}
             </div>
-            <h3>Start Live Meeting</h3>
-            <p>
-              {hasActiveMeeting
-                ? 'A live meeting is already running. Return to it before starting another one.'
-                : 'Launch real-time AI assistant'}
-            </p>
-            {hasActiveMeeting && (
-              <button
-                type="button"
-                className="action-card-inline-btn"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  navigate('/meetings/live');
-                }}
-              >
-                Go to Live Meeting
-              </button>
-            )}
+            <div className="action-card-body">
+              <h3>Start Live Meeting</h3>
+              <p>
+                {hasActiveMeeting
+                  ? 'A live meeting is already running.'
+                  : 'Launch real-time AI assistant'}
+              </p>
+              {hasActiveMeeting && (
+                <button
+                  type="button"
+                  className="action-card-inline-btn"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    navigate('/meetings/live');
+                  }}
+                >
+                  Go to Live Meeting
+                </button>
+              )}
+            </div>
           </div>
+
           <div className="action-card action-card--orange" onClick={() => setShowNewFutureMeeting(true)}>
-            <div className="action-card-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
+            <div className="action-card-top">
+              <div className="action-card-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </div>
+              <div className="action-card-arrow">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                  <polyline points="12 5 19 12 12 19" />
+                </svg>
+              </div>
             </div>
-            <h3>Create New Meeting</h3>
-            <p>Set your up-coming meeting</p>
+            <div className="action-card-body">
+              <h3>Create New Meeting</h3>
+              <p>Schedule your upcoming meeting</p>
+            </div>
           </div>
+
           <div className="action-card action-card--purple" onClick={() => setShowUploadMeeting(true)}>
-            <div className="action-card-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-                <polyline points="17 8 12 3 7 8" />
-                <line x1="12" y1="3" x2="12" y2="15" />
-              </svg>
+            <div className="action-card-top">
+              <div className="action-card-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                  <polyline points="17 8 12 3 7 8" />
+                  <line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+              </div>
+              <div className="action-card-arrow">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                  <polyline points="12 5 19 12 12 19" />
+                </svg>
+              </div>
             </div>
-            <h3>Upload Meeting</h3>
-            <p>Transcribe &amp; analyze MP3</p>
+            <div className="action-card-body">
+              <h3>Upload Meeting</h3>
+              <p>Transcribe &amp; analyze audio</p>
+            </div>
           </div>
         </div>
 
@@ -571,10 +606,12 @@ const DashboardPage = () => {
                 <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
               </svg>
             </div>
-            <span className="stat-number" title={statsError || undefined}>
-              {formatStatNumber(meetingsThisMonth)}
-            </span>
-            <span className="stat-label">Meetings this month</span>
+            <div className="stat-content">
+              <span className="stat-number" title={statsError || undefined}>
+                {formatStatNumber(meetingsThisMonth)}
+              </span>
+              <span className="stat-label">Meetings this month</span>
+            </div>
           </div>
           <div className="stat-card">
             <div className="stat-icon stat-icon--yellow">
@@ -583,10 +620,12 @@ const DashboardPage = () => {
                 <polyline points="12 6 12 12 16 14" />
               </svg>
             </div>
-            <span className="stat-number" title={statsError || undefined}>
-              {formatAverageDuration(averageDuration)}
-            </span>
-            <span className="stat-label">Average duration</span>
+            <div className="stat-content">
+              <span className="stat-number" title={statsError || undefined}>
+                {formatAverageDuration(averageDuration)}
+              </span>
+              <span className="stat-label">Average duration</span>
+            </div>
           </div>
           <div className="stat-card">
             <div className="stat-icon stat-icon--purple">
@@ -597,8 +636,10 @@ const DashboardPage = () => {
                 <line x1="3" y1="10" x2="21" y2="10" />
               </svg>
             </div>
-            <span className="stat-number">{isLoadingUpcoming ? '...' : upcomingThisWeekCount}</span>
-            <span className="stat-label">Upcoming this week</span>
+            <div className="stat-content">
+              <span className="stat-number">{isLoadingUpcoming ? '...' : upcomingThisWeekCount}</span>
+              <span className="stat-label">Upcoming this week</span>
+            </div>
           </div>
         </div>
 

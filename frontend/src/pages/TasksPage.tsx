@@ -55,6 +55,7 @@ type Task = {
   assignee: string;
   due: string;
   dueSort: number;
+  isOverdue: boolean;
   tag: string;
   status: TaskStatus;
   source: 'github' | 'local';
@@ -73,20 +74,17 @@ const getAssigneeId = (assignee?: UserOption | string) =>
   typeof assignee === 'string' ? assignee : assignee?._id;
 
 const formatDueDate = (value?: string) => {
-  if (!value) {
-    return '';
-  }
-
+  if (!value) return '';
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '';
-  }
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' }).format(date);
+};
 
-  return new Intl.DateTimeFormat('en-GB', {
-    day: '2-digit',
-    month: '2-digit',
-    year: '2-digit',
-  }).format(date);
+const isDateOverdue = (value?: string, status?: TaskStatus): boolean => {
+  if (!value || status === 'Done') return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return date < new Date();
 };
 
 const normalizeTask = (task: RawTask): Task => {
@@ -96,6 +94,7 @@ const normalizeTask = (task: RawTask): Task => {
   const issueTag = task.gitHubIssueId
     ? `${task.gitHubRepoName || 'MINGO'}-${task.gitHubIssueId}`
     : task.gitHubRepoName || 'Manual';
+  const status: TaskStatus = task.status === 'Done' ? 'Done' : 'To Do';
 
   return {
     id: task._id,
@@ -104,19 +103,34 @@ const normalizeTask = (task: RawTask): Task => {
       task.description ||
       (task.gitHubIssueId ? `GitHub issue #${task.gitHubIssueId}` : 'Untitled task'),
     ...(task.meeting?._id ? { meetingId: task.meeting._id } : {}),
-    meeting: task.meeting?.title || 'Unlinked meeting',
+    meeting: task.meeting?.title || 'Unlinked',
     ...(getAssigneeId(task.assigneeId) ? { assigneeId: getAssigneeId(task.assigneeId) } : {}),
     assignee: assigneeLabel,
     due: formatDueDate(task.dueDate),
     dueSort: Number.isNaN(dueTime) ? Number.POSITIVE_INFINITY : dueTime,
+    isOverdue: isDateOverdue(task.dueDate, status),
     tag: issueTag,
-    status: task.status === 'Done' ? 'Done' : 'To Do',
+    status,
     source: task.source === 'github' ? 'github' : 'local',
     ...(task.sourceType ? { sourceType: task.sourceType } : {}),
     ...(task.projectTitle ? { projectTitle: task.projectTitle } : {}),
     ...(task.htmlUrl ? { htmlUrl: task.htmlUrl } : {}),
   };
 };
+
+const SkeletonRows = () => (
+  <>
+    {[1, 2, 3, 4].map((n) => (
+      <div key={n} className="task-row-skeleton">
+        <div className="task-row-skeleton__dot" />
+        <div className="task-row-skeleton__lines">
+          <div className="task-row-skeleton__line" />
+          <div className="task-row-skeleton__line" />
+        </div>
+      </div>
+    ))}
+  </>
+);
 
 const TasksPage = () => {
   const currentUser = getStoredUser();
@@ -129,6 +143,7 @@ const TasksPage = () => {
   const [selectedRepoName, setSelectedRepoName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingRepos, setIsLoadingRepos] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [repoError, setRepoError] = useState('');
 
@@ -169,7 +184,7 @@ const TasksPage = () => {
     }
   };
 
-  const loadTasks = async (repoName = selectedRepoName) => {
+  const loadTasks = async (repoName = selectedRepoName, showRefresh = false) => {
     if (!currentUser?._id) {
       setTasks([]);
       setIsLoading(false);
@@ -177,12 +192,11 @@ const TasksPage = () => {
     }
 
     try {
-      setIsLoading(true);
+      if (showRefresh) setIsRefreshing(true);
+      else setIsLoading(true);
       setError('');
       const params = new URLSearchParams();
-      if (repoName) {
-        params.set('repo', repoName);
-      }
+      if (repoName) params.set('repo', repoName);
       const query = params.toString() ? `?${params.toString()}` : '';
       const response = await fetchWithAuth(`/api/users/${currentUser._id}/tasks${query}`);
 
@@ -201,16 +215,12 @@ const TasksPage = () => {
       setError(err instanceof Error ? err.message : 'Unable to load tasks.');
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   };
 
-  useEffect(() => {
-    void loadRepos();
-  }, [currentUser?._id]);
-
-  useEffect(() => {
-    void loadTasks(selectedRepoName);
-  }, [currentUser?._id, selectedRepoName]);
+  useEffect(() => { void loadRepos(); }, [currentUser?._id]);
+  useEffect(() => { void loadTasks(selectedRepoName); }, [currentUser?._id, selectedRepoName]);
 
   const assignees = useMemo(() => {
     const set = new Set(tasks.map((task) => task.assignee));
@@ -220,13 +230,8 @@ const TasksPage = () => {
   const filtered = useMemo(() => {
     let result = [...tasks];
 
-    if (activeTab !== 'All') {
-      result = result.filter((task) => task.status === activeTab);
-    }
-
-    if (assigneeFilter !== 'All') {
-      result = result.filter((task) => task.assignee === assigneeFilter);
-    }
+    if (activeTab !== 'All') result = result.filter((task) => task.status === activeTab);
+    if (assigneeFilter !== 'All') result = result.filter((task) => task.assignee === assigneeFilter);
 
     if (search.trim()) {
       const query = search.trim().toLowerCase();
@@ -251,24 +256,23 @@ const TasksPage = () => {
 
   const stats = useMemo(() => ({
     total: tasks.length,
-    todo: tasks.filter((task) => task.status === 'To Do').length,
-    done: tasks.filter((task) => task.status === 'Done').length,
+    todo: tasks.filter((t) => t.status === 'To Do').length,
+    done: tasks.filter((t) => t.status === 'Done').length,
   }), [tasks]);
 
   const updateTaskStatus = async (task: Task, nextStatus: TaskStatus) => {
     if (task.source === 'github') {
-      setError('GitHub tasks are synced from GitHub. Update their status in GitHub Issues.');
+      setError('GitHub tasks must be updated in GitHub Issues.');
       return;
     }
-
     if (!task.meetingId) {
-      setError('This task is not linked to a meeting yet.');
+      setError('This task is not linked to a meeting.');
       return;
     }
 
     const previousTasks = tasks;
     setTasks((prev) =>
-      prev.map((current) => (current.id === task.id ? { ...current, status: nextStatus } : current)),
+      prev.map((t) => (t.id === task.id ? { ...t, status: nextStatus, isOverdue: false } : t)),
     );
 
     try {
@@ -276,10 +280,7 @@ const TasksPage = () => {
         method: 'PUT',
         body: JSON.stringify({ status: nextStatus }),
       });
-
-      if (!response.ok) {
-        throw new Error('Unable to update task status.');
-      }
+      if (!response.ok) throw new Error('Unable to update task status.');
     } catch (err) {
       setTasks(previousTasks);
       setError(err instanceof Error ? err.message : 'Unable to update task status.');
@@ -288,12 +289,11 @@ const TasksPage = () => {
 
   const handleDeleteTask = async (task: Task) => {
     if (task.source === 'github') {
-      setError('GitHub tasks cannot be deleted from Mingo. Manage them in GitHub.');
+      setError('GitHub tasks can only be managed in GitHub.');
       return;
     }
-
     if (!task.meetingId) {
-      setError('This task is not linked to a meeting yet.');
+      setError('This task is not linked to a meeting.');
       return;
     }
 
@@ -302,15 +302,20 @@ const TasksPage = () => {
       const response = await fetchWithAuth(`/api/meetings/${task.meetingId}/tasks/${task.id}`, {
         method: 'DELETE',
       });
-
-      if (!response.ok) {
-        throw new Error('Unable to delete task.');
-      }
-
-      setTasks((prev) => prev.filter((current) => current.id !== task.id));
+      if (!response.ok) throw new Error('Unable to delete task.');
+      setTasks((prev) => prev.filter((t) => t.id !== task.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to delete task.');
     }
+  };
+
+  const hasFilters = assigneeFilter !== 'All' || activeTab !== 'All' || Boolean(selectedRepoName);
+
+  const clearAllFilters = () => {
+    setAssigneeFilter('All');
+    setActiveTab('All');
+    setSelectedRepoName('');
+    setSearch('');
   };
 
   return (
@@ -318,75 +323,74 @@ const TasksPage = () => {
       <Header />
 
       <main className="tasks-main">
+        <div className="tasks-heading">
+          <h1>Tasks</h1>
+          {!isLoading && (
+            <span className="tasks-heading-count">
+              {stats.total} total · {stats.todo} to do · {stats.done} done
+            </span>
+          )}
+        </div>
+
+        {/* ── Stat cards ── */}
         <div className="tasks-stats-row">
-          <div className="tasks-stat-card" onClick={() => setActiveTab('All')}>
+          <div
+            className={`tasks-stat-card${activeTab === 'All' ? ' tasks-stat-card--active' : ''}`}
+            onClick={() => setActiveTab('All')}
+          >
             <div className="stat-icon stat-icon--total">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="8" y1="8" x2="16" y2="8" /><line x1="8" y1="12" x2="16" y2="12" /><line x1="8" y1="16" x2="12" y2="16" />
               </svg>
             </div>
-            <span className="stat-number">{isLoading ? '...' : stats.total}</span>
-            <span className="stat-label">Total Tasks</span>
+            <div className="stat-content">
+              <span className="stat-number">{isLoading ? '–' : stats.total}</span>
+              <span className="stat-label">All Tasks</span>
+            </div>
           </div>
-          <div className="tasks-stat-card" onClick={() => setActiveTab('To Do')}>
+
+          <div
+            className={`tasks-stat-card${activeTab === 'To Do' ? ' tasks-stat-card--active' : ''}`}
+            onClick={() => setActiveTab('To Do')}
+          >
             <div className="stat-icon stat-icon--todo">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10" />
               </svg>
             </div>
-            <span className="stat-number">{isLoading ? '...' : stats.todo}</span>
-            <span className="stat-label">To Do</span>
+            <div className="stat-content">
+              <span className="stat-number">{isLoading ? '–' : stats.todo}</span>
+              <span className="stat-label">To Do</span>
+            </div>
           </div>
-          <div className="tasks-stat-card" onClick={() => setActiveTab('Done')}>
+
+          <div
+            className={`tasks-stat-card${activeTab === 'Done' ? ' tasks-stat-card--active' : ''}`}
+            onClick={() => setActiveTab('Done')}
+          >
             <div className="stat-icon stat-icon--done">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10" /><polyline points="8 12 11 15 16 9" />
               </svg>
             </div>
-            <span className="stat-number">{isLoading ? '...' : stats.done}</span>
-            <span className="stat-label">Done</span>
+            <div className="stat-content">
+              <span className="stat-number">{isLoading ? '–' : stats.done}</span>
+              <span className="stat-label">Done</span>
+            </div>
           </div>
         </div>
 
-        <div className="tasks-sync-note">
-          <div>
-            <strong>Synced from GitHub</strong>
-            <span>Choose a repository and Mingo will pull every issue from that repository.</span>
-          </div>
-          <div className="tasks-sync-controls">
-            <select
-              value={selectedRepoName}
-              onChange={(event) => setSelectedRepoName(event.target.value)}
-              disabled={isLoadingRepos}
-            >
-              <option value="">
-                {isLoadingRepos ? 'Loading repositories...' : 'Repos from my meetings'}
-              </option>
-              {repos.map((repo) => (
-                <option key={repo.id} value={repo.fullName}>
-                  {repo.fullName}
-                </option>
-              ))}
-            </select>
-            <button type="button" onClick={() => void loadTasks()} disabled={isLoading}>
-              {isLoading ? 'Refreshing...' : 'Refresh'}
-            </button>
-          </div>
-        </div>
-
-        {repoError && <p className="tasks-error">{repoError}</p>}
-        {error && <p className="tasks-error">{error}</p>}
-
-        <div className="tasks-toolbar">
+        {/* ── Unified controls bar ── */}
+        <div className="tasks-controls">
           <div className="tasks-search-box">
             <svg className="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
             <input
               type="text"
-              placeholder="Search tasks, assignees, meetings..."
+              placeholder="Search tasks…"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(e) => setSearch(e.target.value)}
             />
             {search && (
               <button type="button" className="search-clear" onClick={() => setSearch('')}>
@@ -400,9 +404,9 @@ const TasksPage = () => {
           <div className="tasks-filter-tabs">
             {tabs.map((tab) => (
               <button
-                type="button"
                 key={tab}
-                className={`filter-tab ${activeTab === tab ? 'filter-tab--active' : ''}`}
+                type="button"
+                className={`filter-tab${activeTab === tab ? ' filter-tab--active' : ''}`}
                 onClick={() => setActiveTab(tab)}
               >
                 {tab}
@@ -414,107 +418,232 @@ const TasksPage = () => {
               </button>
             ))}
           </div>
-        </div>
 
-        <div className="tasks-filters-row">
-          <div className="filter-dropdown">
-            <label>Assignee</label>
-            <select value={assigneeFilter} onChange={(event) => setAssigneeFilter(event.target.value)}>
-              {assignees.map((assignee) => (
-                <option key={assignee} value={assignee}>{assignee === 'All' ? 'All Assignees' : assignee}</option>
+          {assignees.length > 2 && (
+            <select
+              className="tasks-control-select"
+              value={assigneeFilter}
+              onChange={(e) => setAssigneeFilter(e.target.value)}
+              title="Filter by assignee"
+            >
+              {assignees.map((a) => (
+                <option key={a} value={a}>{a === 'All' ? 'All assignees' : a}</option>
               ))}
             </select>
-          </div>
-          <div className="filter-dropdown">
-            <label>Sort by</label>
-            <select value={sortBy} onChange={(event) => setSortBy(event.target.value as SortKey)}>
-              <option value="due">Due Date</option>
-              <option value="assignee">Assignee</option>
-              <option value="status">Status</option>
-            </select>
-          </div>
-          {(assigneeFilter !== 'All' || activeTab !== 'All') && (
-            <button
-              type="button"
-              className="clear-filters-btn"
-              onClick={() => { setAssigneeFilter('All'); setActiveTab('All'); }}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-              Clear Filters
-            </button>
           )}
+
+          <select
+            className="tasks-control-select"
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortKey)}
+          >
+            <option value="due">Sort: Due date</option>
+            <option value="assignee">Sort: Assignee</option>
+            <option value="status">Sort: Status</option>
+          </select>
+
+          {repos.length > 0 && (
+            <select
+              className="tasks-control-select"
+              value={selectedRepoName}
+              onChange={(e) => setSelectedRepoName(e.target.value)}
+              disabled={isLoadingRepos}
+              title="GitHub repository"
+            >
+              <option value="">All repos</option>
+              {repos.map((repo) => (
+                <option key={repo.id} value={repo.fullName}>{repo.fullName}</option>
+              ))}
+            </select>
+          )}
+
+          <button
+            type="button"
+            className={`tasks-refresh-btn${isRefreshing ? ' tasks-refresh-btn--spinning' : ''}`}
+            onClick={() => void loadTasks(selectedRepoName, true)}
+            disabled={isLoading || isRefreshing}
+            title="Refresh tasks"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+            </svg>
+            {isRefreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
         </div>
 
+        {/* ── Active filter pills ── */}
+        {hasFilters && (
+          <div className="tasks-active-filters">
+            {activeTab !== 'All' && (
+              <span className="tasks-filter-pill">
+                {activeTab}
+                <button type="button" onClick={() => setActiveTab('All')}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </span>
+            )}
+            {assigneeFilter !== 'All' && (
+              <span className="tasks-filter-pill">
+                {assigneeFilter}
+                <button type="button" onClick={() => setAssigneeFilter('All')}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </span>
+            )}
+            {selectedRepoName && (
+              <span className="tasks-filter-pill">
+                {selectedRepoName}
+                <button type="button" onClick={() => setSelectedRepoName('')}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </span>
+            )}
+            <button type="button" className="tasks-clear-all" onClick={clearAllFilters}>
+              Clear all
+            </button>
+          </div>
+        )}
+
+        {/* ── Errors ── */}
+        {repoError && <p className="tasks-error">{repoError}</p>}
+        {error && <p className="tasks-error">{error}</p>}
+
+        {/* ── Task list card ── */}
         <div className="tasks-card">
           <div className="tasks-card-header">
             <h2>Tasks</h2>
-            <span className="tasks-count">{isLoading ? 'Loading...' : `${filtered.length} ${filtered.length === 1 ? 'task' : 'tasks'}`}</span>
+            <span className="tasks-count">
+              {isLoading ? 'Loading…' : `${filtered.length} ${filtered.length === 1 ? 'task' : 'tasks'}`}
+            </span>
           </div>
 
-          {!isLoading && filtered.length === 0 ? (
+          {isLoading ? (
+            <SkeletonRows />
+          ) : filtered.length === 0 ? (
             <div className="tasks-empty">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" /><line x1="8" y1="15" x2="16" y2="15" /><line x1="9" y1="9" x2="9.01" y2="9" /><line x1="15" y1="9" x2="15.01" y2="9" />
-              </svg>
+              <div className="tasks-empty-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                </svg>
+              </div>
               <p>
-                {selectedRepoName
-                  ? 'No GitHub issues were found for this repository.'
-                  : 'No GitHub issues were found for your meeting repositories.'}
+                {search.trim()
+                  ? `No tasks match "${search}"`
+                  : hasFilters
+                    ? 'No tasks match the active filters.'
+                    : "No tasks yet. They’ll appear here once meetings are processed."}
               </p>
             </div>
           ) : (
             <div className="tasks-list">
               {filtered.map((task) => (
-                <div key={task.id} className={`task-row ${task.status === 'Done' ? 'task-row--done' : ''}`}>
-                  <span className={`task-status-dot task-status-dot--${task.status === 'Done' ? 'done' : 'todo'}`}>
-                    {task.status === 'Done' && (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                    )}
-                  </span>
+                <div key={task.id} className={`task-row${task.status === 'Done' ? ' task-row--done' : ''}`}>
 
+                  {/* Status toggle button */}
+                  <button
+                    type="button"
+                    className={`task-status-btn${task.status === 'Done' ? ' task-status-btn--done' : ''}${task.source === 'github' ? ' task-status-btn--disabled' : ''}`}
+                    title={
+                      task.source === 'github'
+                        ? 'Update this in GitHub Issues'
+                        : task.status === 'Done'
+                          ? 'Mark as To Do'
+                          : 'Mark as Done'
+                    }
+                    onClick={() => {
+                      if (task.source === 'github') return;
+                      void updateTaskStatus(task, task.status === 'Done' ? 'To Do' : 'Done');
+                    }}
+                  >
+                    {task.status === 'Done' && (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </button>
+
+                  {/* Task info */}
                   <div className="task-row-info">
-                    <span className={`task-row-title ${task.status === 'Done' ? 'task-row-title--done' : ''}`}>{task.title}</span>
+                    <span className={`task-row-title${task.status === 'Done' ? ' task-row-title--done' : ''}`}>
+                      {task.title}
+                    </span>
                     <span className="task-row-meta">
-                      {task.meeting}
-                      <span className="meta-sep">|</span>
-                      {task.assignee}
+                      <span className="task-meta-item">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+                        </svg>
+                        {task.meeting}
+                      </span>
+
+                      <span className="task-meta-sep" />
+                      <span className="task-meta-item">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+                        </svg>
+                        {task.assignee}
+                      </span>
+
                       {task.due && (
                         <>
-                          <span className="meta-sep">|</span>
-                          Due to {task.due}
+                          <span className="task-meta-sep" />
+                          <span className={`task-meta-item${task.isOverdue ? ' task-due--overdue' : ''}`}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+                            </svg>
+                            {task.isOverdue ? 'Overdue · ' : 'Due '}{task.due}
+                          </span>
                         </>
                       )}
+
                       {task.projectTitle && (
                         <>
-                          <span className="meta-sep">|</span>
-                          {task.projectTitle}
+                          <span className="task-meta-sep" />
+                          <span className="task-meta-item">{task.projectTitle}</span>
                         </>
                       )}
                     </span>
                   </div>
 
+                  {/* Right side badges */}
                   <div className="task-row-badges">
-                    {task.source === 'local' && (
-                      <select
-                        className="task-status-select"
-                        value={task.status}
-                        onChange={(event) => void updateTaskStatus(task, event.target.value as TaskStatus)}
-                      >
-                        <option value="To Do">To Do</option>
-                        <option value="Done">Done</option>
-                      </select>
-                    )}
+                    <span className={`task-source-badge task-source-badge--${task.source}`}>
+                      {task.source === 'github' ? (
+                        <>
+                          <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 0C5.37 0 0 5.49 0 12.26c0 5.42 3.44 10.02 8.2 11.64.6.12.82-.27.82-.6 0-.3-.01-1.1-.02-2.16-3.34.75-4.04-1.67-4.04-1.67-.55-1.43-1.33-1.81-1.33-1.81-1.09-.76.08-.75.08-.75 1.2.09 1.84 1.27 1.84 1.27 1.07 1.9 2.8 1.35 3.49 1.03.11-.8.42-1.35.76-1.66-2.67-.31-5.48-1.38-5.48-6.14 0-1.36.47-2.46 1.24-3.33-.13-.31-.54-1.58.12-3.3 0 0 1.01-.33 3.3 1.27a11.2 11.2 0 0 1 6 0c2.3-1.6 3.3-1.27 3.3-1.27.66 1.72.25 2.99.12 3.3.77.87 1.24 1.97 1.24 3.33 0 4.77-2.82 5.82-5.5 6.13.43.38.82 1.12.82 2.27 0 1.64-.02 2.95-.02 3.35 0 .33.22.73.83.6A12.27 12.27 0 0 0 24 12.26C24 5.49 18.63 0 12 0Z" />
+                          </svg>
+                          GitHub
+                        </>
+                      ) : 'Mingo'}
+                    </span>
+
                     {task.htmlUrl && (
-                      <a className="task-open-link" href={task.htmlUrl} target="_blank" rel="noreferrer">
-                        GitHub
+                      <a className="task-open-link" href={task.htmlUrl} target="_blank" rel="noreferrer" title="Open in GitHub">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+                        </svg>
+                        View
                       </a>
                     )}
+
                     <span className="task-tag">{task.tag}</span>
+
                     {task.source === 'local' && (
-                      <button type="button" className="task-delete-btn" onClick={() => void handleDeleteTask(task)}>
-                        Delete
+                      <button
+                        type="button"
+                        className="task-delete-btn"
+                        title="Delete task"
+                        onClick={() => void handleDeleteTask(task)}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" />
+                        </svg>
                       </button>
                     )}
                   </div>
