@@ -347,8 +347,10 @@ const HistoryPage = () => {
                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
               </svg>
             </div>
-            <span className="hstat-number">{stats.total}</span>
-            <span className="hstat-label">Total Meetings</span>
+            <div className="hstat-content">
+              <span className="hstat-number">{stats.total}</span>
+              <span className="hstat-label">Total Meetings</span>
+            </div>
           </div>
           <div className="history-stat-card" onClick={() => setActiveTab('Last Week')}>
             <div className="hstat-icon hstat-icon--week">
@@ -356,8 +358,10 @@ const HistoryPage = () => {
                 <circle cx="12" cy="12" r="10" />
               </svg>
             </div>
-            <span className="hstat-number">{stats.thisWeek}</span>
-            <span className="hstat-label">This Week</span>
+            <div className="hstat-content">
+              <span className="hstat-number">{stats.thisWeek}</span>
+              <span className="hstat-label">This Week</span>
+            </div>
           </div>
           <div className="history-stat-card" onClick={() => setActiveTab('Upcoming')}>
             <div className="hstat-icon hstat-icon--future">
@@ -365,8 +369,10 @@ const HistoryPage = () => {
                 <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="4" fill="currentColor" />
               </svg>
             </div>
-            <span className="hstat-number">{stats.future}</span>
-            <span className="hstat-label">Future Meetings</span>
+            <div className="hstat-content">
+              <span className="hstat-number">{stats.future}</span>
+              <span className="hstat-label">Future Meetings</span>
+            </div>
           </div>
         </div>
 
