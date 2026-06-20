@@ -1,8 +1,9 @@
-/* Overlay */
+/* ── Overlay ────────────────────────────────────────────────── */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -10,7 +11,19 @@
   padding: 24px;
 }
 
-/* Narrower variant for Start Meeting (legacy) */
+/* ── Modal box ──────────────────────────────────────────────── */
+.modal-content {
+  background: #fff;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 780px;
+  padding: 36px 40px 32px;
+  position: relative;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.18);
+  border: 1px solid #e2e8f0;
+  animation: modalFadeIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
 .start-meeting-narrow {
   max-width: 480px;
 }
@@ -19,93 +32,80 @@
   margin-bottom: 28px;
 }
 
-/* Modal box */
-.modal-content {
-  background: #fff;
-  border-radius: 16px;
-  width: 100%;
-  max-width: 780px;
-  padding: 36px 40px 32px;
-  position: relative;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22);
-  animation: modalFadeIn 0.2s ease;
-}
-
 .start-meeting-modal {
   max-width: 860px;
-  padding: 28px 54px 34px;
+  padding: 32px 52px 36px;
 }
 
 @keyframes modalFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* Close button */
+/* ── Close button ───────────────────────────────────────────── */
 .modal-close {
   position: absolute;
   top: 14px;
   right: 16px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: none;
-  border: none;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
   cursor: pointer;
-  color: #111827;
-  padding: 4px;
-  border-radius: 6px;
+  color: #64748b;
   transition: background 0.15s, color 0.15s;
 }
 
 .modal-close:hover {
-  background: #f3f4f6;
+  background: #f1f5f9;
+  color: #0f172a;
 }
 
 .modal-close svg {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
 }
 
-/* Title */
+/* ── Title ──────────────────────────────────────────────────── */
 .modal-title {
-  font-size: 31px;
+  font-size: 26px;
   font-weight: 800;
-  color: #3f3f46;
-  margin-bottom: 36px;
+  color: #0f172a;
+  margin-bottom: 28px;
+  letter-spacing: -0.4px;
 }
 
-/* Shared two columns */
+/* ── Two-column body ────────────────────────────────────────── */
 .modal-body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 28px;
-  margin-bottom: 32px;
+  margin-bottom: 28px;
 }
 
 .modal-column-title {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
-  color: #444451;
+  color: #0f172a;
   margin-bottom: 10px;
 }
 
-/* Start meeting specific layout */
+/* ── Start meeting grid ─────────────────────────────────────── */
 .start-meeting-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 54px;
-  margin-bottom: 34px;
+  gap: 48px;
+  margin-bottom: 32px;
 }
 
 .start-meeting-column {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 18px;
 }
 
 .start-meeting-field {
@@ -114,27 +114,30 @@
 }
 
 .start-meeting-repository {
-  border: 1px solid #d9e3f0;
-  border-radius: 9px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
   padding: 11px 14px;
   font-size: 14px;
-  color: #111827;
+  color: #0f172a;
+  background: #f8fafc;
   outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
 
 .start-meeting-repository::placeholder {
-  color: #c3c9d4;
+  color: #94a3b8;
 }
 
 .start-meeting-repository:focus {
-  border-color: #9ab8f7;
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.08);
+  border-color: #a5b4fc;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
-/* Upload zone shared */
+/* ── Upload zone ────────────────────────────────────────────── */
 .upload-zone {
-  border: 2px dashed #93c5fd;
-  border-radius: 12px;
+  border: 2px dashed #c7d2fe;
+  border-radius: 14px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -143,29 +146,31 @@
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
   padding: 24px;
+  background: #f8fafc;
 }
 
 .upload-zone:hover {
-  background: #eff6ff;
-  border-color: #3b82f6;
+  background: #eef2ff;
+  border-color: #4f46e5;
 }
 
 .upload-icon {
-  width: 48px;
-  height: 48px;
+  width: 46px;
+  height: 46px;
   margin-bottom: 8px;
+  color: #a5b4fc;
 }
 
 .upload-label {
   font-size: 14px;
   font-weight: 600;
-  color: #60a5fa;
+  color: #4f46e5;
   margin-top: 2px;
 }
 
 .upload-sublabel {
   font-size: 13px;
-  color: #9ca3af;
+  color: #94a3b8;
   margin-top: 2px;
 }
 
@@ -179,31 +184,37 @@
 .upload-filename {
   font-size: 14px;
   font-weight: 600;
-  color: #3b82f6;
+  color: #4f46e5;
   word-break: break-all;
   text-align: center;
 }
 
 .upload-note {
   font-size: 11px;
-  color: #9ca3af;
+  color: #94a3b8;
   margin-top: 10px;
   line-height: 1.4;
 }
 
-/* Attendees shared */
+/* ── Attendees ──────────────────────────────────────────────── */
 .attendees-search {
   display: flex;
   align-items: center;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
   overflow: hidden;
   margin-bottom: 12px;
+  background: #f8fafc;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.attendees-search:focus-within {
+  border-color: #a5b4fc;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 .start-meeting-attendees-search {
-  border-color: #d9e3f0;
-  border-radius: 9px;
   margin-bottom: 14px;
 }
 
@@ -211,13 +222,14 @@
   flex: 1;
   border: none;
   outline: none;
-  padding: 9px 12px;
+  padding: 10px 12px;
   font-size: 14px;
-  color: #111827;
+  color: #0f172a;
+  background: transparent;
 }
 
 .attendees-search input::placeholder {
-  color: #c3c9d4;
+  color: #94a3b8;
 }
 
 .attendees-search-btn {
@@ -225,19 +237,19 @@
   border: none;
   padding: 8px 12px;
   cursor: pointer;
-  color: #adc0e2;
+  color: #94a3b8;
   display: flex;
   align-items: center;
   transition: color 0.15s;
 }
 
 .attendees-search-btn:hover {
-  color: #3b82f6;
+  color: #4f46e5;
 }
 
 .attendees-search-btn svg {
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
 }
 
 .attendees-list {
@@ -248,18 +260,22 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .start-meeting-attendees-list {
   max-height: 188px;
-  padding-right: 6px;
+  padding-right: 4px;
 }
+
+.start-meeting-attendees-list::-webkit-scrollbar { width: 6px; }
+.start-meeting-attendees-list::-webkit-scrollbar-track { background: transparent; }
+.start-meeting-attendees-list::-webkit-scrollbar-thumb { background: #c7d2fe; border-radius: 999px; }
 
 .start-meeting-suggestions {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   margin-bottom: 14px;
 }
 
@@ -267,19 +283,25 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 3px;
+  gap: 2px;
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #e1e9f4;
-  border-radius: 12px;
-  background: #f8fbff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
   cursor: pointer;
   text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.start-meeting-suggestion:hover {
+  background: #eef2ff;
+  border-color: #c7d2fe;
 }
 
 .start-meeting-suggestion strong {
   font-size: 13px;
-  color: #1e293b;
+  color: #0f172a;
 }
 
 .start-meeting-suggestion span {
@@ -299,57 +321,44 @@
   color: #dc2626;
 }
 
-.start-meeting-attendees-list::-webkit-scrollbar {
-  width: 8px;
-}
-
-.start-meeting-attendees-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.start-meeting-attendees-list::-webkit-scrollbar-thumb {
-  background: #c3d6fb;
-  border-radius: 999px;
-}
-
 .attendee-item {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 9px;
   transition: background 0.12s;
 }
 
 .start-meeting-attendee-item {
-  padding: 7px 0;
+  padding: 7px 2px;
 }
 
 .attendee-item:hover {
-  background: #f9fafb;
+  background: #f8fafc;
 }
 
 .attendee-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: #2478ff;
+  background: #4f46e5;
   flex-shrink: 0;
 }
 
 .attendee-name {
   flex: 1;
   font-size: 14px;
-  color: #627188;
+  color: #64748b;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
 .attendee-name strong {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  color: #475569;
+  color: #0f172a;
 }
 
 .attendee-name small {
@@ -361,51 +370,54 @@
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 18px;
-  color: #ef476f;
+  font-size: 16px;
+  color: #ef4444;
   line-height: 1;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: 5px;
   transition: background 0.12s;
 }
 
 .attendee-remove:hover {
-  background: #ffe2ea;
+  background: #fef2f2;
 }
 
-/* Create button */
+/* ── Create button ──────────────────────────────────────────── */
 .modal-create-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
   width: 100%;
-  max-width: 382px;
+  max-width: 380px;
   margin: 0 auto;
-  padding: 15px 0;
-  font-size: 16px;
+  padding: 14px 0;
+  font-size: 15px;
   font-weight: 700;
   color: #fff;
-  background: #1f75ea;
+  background: #4f46e5;
   border: none;
   border-radius: 12px;
   cursor: pointer;
-  transition: background 0.2s, box-shadow 0.2s;
+  transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
+  box-shadow: 0 4px 16px rgba(79, 70, 229, 0.3);
 }
 
 .modal-create-btn:hover {
-  background: #1464d1;
-  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);
+  background: #4338ca;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 22px rgba(79, 70, 229, 0.38);
 }
 
 .modal-create-btn svg {
-  width: 20px;
-  height: 20px;
+  width: 19px;
+  height: 19px;
 }
 
 .modal-create-btn:disabled {
-  opacity: 0.75;
+  opacity: 0.6;
   cursor: not-allowed;
+  transform: none;
   box-shadow: none;
 }
 
@@ -416,11 +428,11 @@
   font-size: 13px;
 }
 
-/* Responsive */
+/* ── Responsive ─────────────────────────────────────────────── */
 @media (max-width: 640px) {
   .modal-content,
   .start-meeting-modal {
-    padding: 24px 20px 24px;
+    padding: 24px 20px;
   }
 
   .modal-body,

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import Header from '../components/Header/Header';
 import {
   fetchWithAuth,
   getAuthHeaders,
@@ -11,8 +12,7 @@ import {
 } from '../lib/auth';
 import './SettingsPage.css';
 
-const GOOGLE_ICON =
-  'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg';
+const GOOGLE_ICON = 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg';
 const GITHUB_REDIRECT_KEY = 'github-oauth:redirect';
 const GITHUB_OAUTH_STATE_KEY = 'github-oauth:active';
 
@@ -30,6 +30,68 @@ type GoogleTokenClient = {
   requestAccessToken: () => void;
 };
 
+type FieldErrors = {
+  fullname?: string;
+  username?: string;
+  email?: string;
+  currentPassword?: string;
+  newPassword?: string;
+  confirmPassword?: string;
+};
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const USERNAME_RE = /^[a-zA-Z0-9_-]{3,20}$/;
+
+const validateProfile = (fullname: string, username: string, email: string): FieldErrors => {
+  const errors: FieldErrors = {};
+
+  if (!fullname.trim()) {
+    errors.fullname = 'Full name is required.';
+  } else if (fullname.trim().length < 2) {
+    errors.fullname = 'Full name must be at least 2 characters.';
+  }
+
+  if (!username.trim()) {
+    errors.username = 'Username is required.';
+  } else if (!USERNAME_RE.test(username.trim())) {
+    errors.username = '3–20 characters, letters, numbers, _ or - only.';
+  }
+
+  if (!email.trim()) {
+    errors.email = 'Email is required.';
+  } else if (!EMAIL_RE.test(email.trim())) {
+    errors.email = 'Enter a valid email address.';
+  }
+
+  return errors;
+};
+
+const validatePassword = (
+  currentPassword: string,
+  newPassword: string,
+  confirmPassword: string,
+): FieldErrors => {
+  const errors: FieldErrors = {};
+
+  if (newPassword && !currentPassword) {
+    errors.currentPassword = 'Enter your current password first.';
+  }
+
+  if (newPassword && newPassword.length < 8) {
+    errors.newPassword = 'New password must be at least 8 characters.';
+  }
+
+  if (newPassword && confirmPassword && newPassword !== confirmPassword) {
+    errors.confirmPassword = 'Passwords do not match.';
+  }
+
+  if (confirmPassword && !newPassword) {
+    errors.newPassword = 'Enter a new password first.';
+  }
+
+  return errors;
+};
+
 const SettingsPage = () => {
   const navigate = useNavigate();
   const storedUser = useMemo(() => getStoredUser(), []);
@@ -40,16 +102,23 @@ const SettingsPage = () => {
   const [email, setEmail] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [oauthConfig, setOauthConfig] = useState<OAuthConfigResponse | null>(null);
   const [isGoogleScriptReady, setIsGoogleScriptReady] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
   const [isGoogleSyncing, setIsGoogleSyncing] = useState(false);
   const [isGitHubSyncing, setIsGitHubSyncing] = useState(false);
   const [isGoogleDisconnecting, setIsGoogleDisconnecting] = useState(false);
   const [isGitHubDisconnecting, setIsGitHubDisconnecting] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+
+  const [profileErrors, setProfileErrors] = useState<FieldErrors>({});
+  const [passwordErrors, setPasswordErrors] = useState<FieldErrors>({});
+  const [globalError, setGlobalError] = useState('');
+  const [profileSuccess, setProfileSuccess] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [integrationMessage, setIntegrationMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
   useEffect(() => {
     const loadPageData = async () => {
@@ -93,9 +162,7 @@ const SettingsPage = () => {
           setOauthConfig(providersData);
         }
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : 'Unable to load your settings right now.',
-        );
+        setGlobalError(err instanceof Error ? err.message : 'Unable to load your settings right now.');
       } finally {
         setIsLoading(false);
       }
@@ -126,9 +193,7 @@ const SettingsPage = () => {
     script.onload = () => setIsGoogleScriptReady(true);
     document.body.appendChild(script);
 
-    return () => {
-      script.onload = null;
-    };
+    return () => { script.onload = null; };
   }, []);
 
   const persistStoredUser = (nextProfile: SettingsUser) => {
@@ -145,20 +210,15 @@ const SettingsPage = () => {
   };
 
   const refreshProfile = async () => {
-    if (!storedUser?._id) {
-      return;
-    }
+    if (!storedUser?._id) return;
 
     const response = await fetchWithAuth(`/api/user/${storedUser._id}`);
     const data = await parseResponseBody(response);
 
     if (
-      !response.ok ||
-      !data ||
-      !('_id' in data) ||
-      !('fullname' in data) ||
-      !('username' in data) ||
-      !('email' in data)
+      !response.ok || !data ||
+      !('_id' in data) || !('fullname' in data) ||
+      !('username' in data) || !('email' in data)
     ) {
       throw new Error('Unable to refresh your profile right now.');
     }
@@ -172,19 +232,12 @@ const SettingsPage = () => {
   };
 
   const verifyCurrentPassword = async () => {
-    if (!profile) {
-      return;
-    }
+    if (!profile) return;
 
     const response = await fetch('/api/auth/login', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        email: profile.email,
-        password: currentPassword,
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: profile.email, password: currentPassword }),
     });
 
     const data = await parseResponseBody(response);
@@ -198,41 +251,26 @@ const SettingsPage = () => {
     }
   };
 
-  const handleSave = async (event: FormEvent) => {
+  const handleSaveProfile = async (event: FormEvent) => {
     event.preventDefault();
+    if (!profile) return;
 
-    if (!profile) {
+    setProfileSuccess('');
+    const errors = validateProfile(fullname, username, email);
+
+    if (Object.keys(errors).length > 0) {
+      setProfileErrors(errors);
       return;
     }
 
-    setError('');
-    setSuccess('');
-
-    if (!fullname.trim() || !username.trim() || !email.trim()) {
-      setError('Full name, username, and email are required.');
-      return;
-    }
-
-    if (newPassword && !currentPassword) {
-      setError('Enter your current password before setting a new one.');
-      return;
-    }
-
-    setIsSaving(true);
+    setProfileErrors({});
+    setIsSavingProfile(true);
 
     try {
-      if (newPassword) {
-        await verifyCurrentPassword();
-      }
-
       const formData = new FormData();
       formData.append('fullname', fullname.trim());
       formData.append('username', username.trim());
       formData.append('email', email.trim());
-
-      if (newPassword) {
-        formData.append('password', newPassword);
-      }
 
       const response = await fetchWithAuth(`/api/user/${profile._id}`, {
         method: 'PUT',
@@ -242,46 +280,93 @@ const SettingsPage = () => {
       const data = await parseResponseBody(response);
 
       if (
-        !response.ok ||
-        !data ||
-        !('_id' in data) ||
-        !('fullname' in data) ||
-        !('username' in data) ||
-        !('email' in data)
+        !response.ok || !data ||
+        !('_id' in data) || !('fullname' in data) ||
+        !('username' in data) || !('email' in data)
       ) {
         throw new Error(
           data && 'message' in data && data.message
             ? data.message
-            : 'Unable to save your changes right now.',
+            : 'Unable to save your profile right now.',
         );
       }
 
       const nextProfile = data as SettingsUser;
       setProfile(nextProfile);
+      persistStoredUser(nextProfile);
+      setProfileSuccess('Profile updated successfully.');
+    } catch (err) {
+      setProfileErrors({ fullname: err instanceof Error ? err.message : 'Unable to save your profile.' });
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  const handleSavePassword = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!profile) return;
+
+    setPasswordSuccess('');
+    const errors = validatePassword(currentPassword, newPassword, confirmPassword);
+
+    if (Object.keys(errors).length > 0) {
+      setPasswordErrors(errors);
+      return;
+    }
+
+    if (!newPassword) {
+      setPasswordErrors({ newPassword: 'Enter a new password to save.' });
+      return;
+    }
+
+    setPasswordErrors({});
+    setIsSavingPassword(true);
+
+    try {
+      await verifyCurrentPassword();
+
+      const formData = new FormData();
+      formData.append('fullname', profile.fullname);
+      formData.append('username', profile.username);
+      formData.append('email', profile.email);
+      formData.append('password', newPassword);
+
+      const response = await fetchWithAuth(`/api/user/${profile._id}`, {
+        method: 'PUT',
+        body: formData,
+      });
+
+      const data = await parseResponseBody(response);
+
+      if (!response.ok) {
+        throw new Error(
+          data && 'message' in data && data.message
+            ? data.message
+            : 'Unable to update password right now.',
+        );
+      }
+
       setCurrentPassword('');
       setNewPassword('');
-      persistStoredUser(nextProfile);
-      setSuccess('Your settings were updated.');
+      setConfirmPassword('');
+      setPasswordSuccess('Password updated successfully.');
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Unable to save your changes right now.',
-      );
+      setPasswordErrors({ currentPassword: err instanceof Error ? err.message : 'Unable to update password.' });
     } finally {
-      setIsSaving(false);
+      setIsSavingPassword(false);
     }
   };
 
   const handleGoogleSync = () => {
-    setError('');
-    setSuccess('');
+    setIntegrationMessage(null);
 
     if (!oauthConfig?.googleClientId) {
-      setError('Google sync is not configured yet.');
+      setIntegrationMessage({ type: 'error', text: 'Google sync is not configured yet.' });
       return;
     }
 
     if (!isGoogleScriptReady || !window.google?.accounts?.oauth2) {
-      setError('Google sign-in is still loading. Please try again.');
+      setIntegrationMessage({ type: 'error', text: 'Google sign-in is still loading. Please try again.' });
       return;
     }
 
@@ -292,7 +377,7 @@ const SettingsPage = () => {
       include_granted_scopes: true,
       callback: async (tokenResponse: { access_token?: string; error?: string; scope?: string }) => {
         if (tokenResponse.error || !tokenResponse.access_token) {
-          setError('Google sync failed. Please try again.');
+          setIntegrationMessage({ type: 'error', text: 'Google sync failed. Please try again.' });
           setIsGoogleSyncing(false);
           return;
         }
@@ -323,11 +408,9 @@ const SettingsPage = () => {
 
           saveAuthSession(data);
           await refreshProfile();
-          setSuccess('Google account synced successfully.');
+          setIntegrationMessage({ type: 'success', text: 'Google account connected successfully.' });
         } catch (err) {
-          setError(
-            err instanceof Error ? err.message : 'Unable to sync Google right now.',
-          );
+          setIntegrationMessage({ type: 'error', text: err instanceof Error ? err.message : 'Unable to sync Google right now.' });
         } finally {
           setIsGoogleSyncing(false);
         }
@@ -339,11 +422,10 @@ const SettingsPage = () => {
   };
 
   const handleGitHubSync = () => {
-    setError('');
-    setSuccess('');
+    setIntegrationMessage(null);
 
     if (!oauthConfig?.githubClientId || !oauthConfig.githubCallbackUrl) {
-      setError('GitHub sync is not configured yet.');
+      setIntegrationMessage({ type: 'error', text: 'GitHub sync is not configured yet.' });
       return;
     }
 
@@ -361,19 +443,13 @@ const SettingsPage = () => {
   };
 
   const handleDisconnectProvider = async (provider: 'google' | 'github') => {
-    setError('');
-    setSuccess('');
+    setIntegrationMessage(null);
 
-    if (provider === 'google') {
-      setIsGoogleDisconnecting(true);
-    } else {
-      setIsGitHubDisconnecting(true);
-    }
+    if (provider === 'google') setIsGoogleDisconnecting(true);
+    else setIsGitHubDisconnecting(true);
 
     try {
-      const response = await fetchWithAuth(`/api/auth/${provider}/disconnect`, {
-        method: 'POST',
-      });
+      const response = await fetchWithAuth(`/api/auth/${provider}/disconnect`, { method: 'POST' });
       const data = await parseResponseBody(response);
 
       if (!response.ok) {
@@ -385,21 +461,18 @@ const SettingsPage = () => {
       }
 
       await refreshProfile();
-      setSuccess(
-        `${provider === 'google' ? 'Google' : 'GitHub'} account disconnected successfully.`,
-      );
+      setIntegrationMessage({
+        type: 'success',
+        text: `${provider === 'google' ? 'Google' : 'GitHub'} account disconnected.`,
+      });
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : `Unable to disconnect ${provider} right now.`,
-      );
+      setIntegrationMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : `Unable to disconnect ${provider} right now.`,
+      });
     } finally {
-      if (provider === 'google') {
-        setIsGoogleDisconnecting(false);
-      } else {
-        setIsGitHubDisconnecting(false);
-      }
+      if (provider === 'google') setIsGoogleDisconnecting(false);
+      else setIsGitHubDisconnecting(false);
     }
   };
 
@@ -407,153 +480,288 @@ const SettingsPage = () => {
   const connectedGitHub = Boolean(profile?.githubId);
 
   return (
-    <div className="settings-page">
-      <div className="settings-card">
-        <button
-          type="button"
-          className="settings-close"
-          onClick={() => navigate('/dashboard')}
-          aria-label="Close settings"
-        >
-          ×
-        </button>
+    <div className="settings-layout">
+      <Header />
+      <main className="settings-main">
+        <h1 className="settings-page-title">Account Settings</h1>
+        <p className="settings-page-sub">Manage your profile, security, and connected accounts.</p>
 
-        <h1 className="settings-title">Settings</h1>
+        {globalError && (
+          <div className="settings-feedback settings-feedback--error">{globalError}</div>
+        )}
 
         {isLoading ? (
-          <div className="settings-feedback settings-feedback--muted">
-            Loading your settings...
+          <div className="settings-loading">
+            <div className="settings-skeleton" />
+            <div className="settings-skeleton" style={{ height: '180px' }} />
+            <div className="settings-skeleton" style={{ height: '160px' }} />
           </div>
         ) : (
-          <form className="settings-form" onSubmit={handleSave}>
-            {error && <div className="settings-feedback settings-feedback--error">{error}</div>}
-            {success && (
-              <div className="settings-feedback settings-feedback--success">{success}</div>
-            )}
+          <>
+            {/* ── Profile ── */}
+            <section className="settings-section">
+              <div className="settings-section-header">
+                <p className="settings-section-title">Profile</p>
+                <p className="settings-section-desc">Update your display name, username, and email address.</p>
+              </div>
+              <form onSubmit={handleSaveProfile} noValidate>
+                <div className="settings-section-body">
+                  {profileSuccess && (
+                    <div className="settings-feedback settings-feedback--success">{profileSuccess}</div>
+                  )}
 
-            <div className="settings-fields">
-              <label className="settings-field">
-                <span>Fullname</span>
-                <input
-                  type="text"
-                  value={fullname}
-                  onChange={(event) => setFullname(event.target.value)}
-                  placeholder="Fullname"
-                  required
-                />
-              </label>
+                  <div className="settings-field-row">
+                    <div className="settings-field">
+                      <label className="settings-field-label">
+                        Full name <span className="required">*</span>
+                      </label>
+                      <input
+                        className={`settings-field-input${profileErrors.fullname ? ' settings-field-input--error' : ''}`}
+                        type="text"
+                        value={fullname}
+                        onChange={(e) => {
+                          setFullname(e.target.value);
+                          if (profileErrors.fullname) setProfileErrors((prev) => ({ ...prev, fullname: undefined }));
+                        }}
+                        placeholder="Your full name"
+                      />
+                      {profileErrors.fullname && (
+                        <span className="settings-field-error">{profileErrors.fullname}</span>
+                      )}
+                    </div>
 
-              <label className="settings-field">
-                <span>Username</span>
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(event) => setUsername(event.target.value)}
-                  placeholder="Username"
-                  required
-                />
-              </label>
+                    <div className="settings-field">
+                      <label className="settings-field-label">
+                        Username <span className="required">*</span>
+                      </label>
+                      <input
+                        className={`settings-field-input${profileErrors.username ? ' settings-field-input--error' : ''}`}
+                        type="text"
+                        value={username}
+                        onChange={(e) => {
+                          setUsername(e.target.value);
+                          if (profileErrors.username) setProfileErrors((prev) => ({ ...prev, username: undefined }));
+                        }}
+                        placeholder="your_username"
+                      />
+                      {profileErrors.username ? (
+                        <span className="settings-field-error">{profileErrors.username}</span>
+                      ) : (
+                        <span className="settings-field-hint">Letters, numbers, _ or - (3–20 chars)</span>
+                      )}
+                    </div>
+                  </div>
 
-              <label className="settings-field">
-                <span>Email</span>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="Email"
-                  required
-                />
-              </label>
+                  <div className="settings-field">
+                    <label className="settings-field-label">
+                      Email <span className="required">*</span>
+                    </label>
+                    <input
+                      className={`settings-field-input${profileErrors.email ? ' settings-field-input--error' : ''}`}
+                      type="email"
+                      value={email}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        if (profileErrors.email) setProfileErrors((prev) => ({ ...prev, email: undefined }));
+                      }}
+                      placeholder="you@example.com"
+                    />
+                    {profileErrors.email && (
+                      <span className="settings-field-error">{profileErrors.email}</span>
+                    )}
+                  </div>
+                </div>
 
-              <label className="settings-field">
-                <span>Current Password</span>
-                <input
-                  type="password"
-                  value={currentPassword}
-                  onChange={(event) => setCurrentPassword(event.target.value)}
-                  placeholder="****************"
-                />
-              </label>
+                <div className="settings-section-footer">
+                  <button type="submit" className="settings-save-btn" disabled={isSavingProfile}>
+                    {isSavingProfile ? 'Saving…' : 'Save profile'}
+                  </button>
+                </div>
+              </form>
+            </section>
 
-              <label className="settings-field">
-                <span>New Password</span>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(event) => setNewPassword(event.target.value)}
-                  placeholder="****************"
-                />
-              </label>
-            </div>
+            {/* ── Security ── */}
+            <section className="settings-section">
+              <div className="settings-section-header">
+                <p className="settings-section-title">Security</p>
+                <p className="settings-section-desc">Change your password. Leave blank if you don't want to update it.</p>
+              </div>
+              <form onSubmit={handleSavePassword} noValidate>
+                <div className="settings-section-body">
+                  {passwordSuccess && (
+                    <div className="settings-feedback settings-feedback--success">{passwordSuccess}</div>
+                  )}
 
-            <button type="submit" className="settings-save" disabled={isSaving}>
-              {isSaving ? 'Saving...' : 'Save changes'}
-            </button>
+                  <div className="settings-field">
+                    <label className="settings-field-label">Current password</label>
+                    <input
+                      className={`settings-field-input${passwordErrors.currentPassword ? ' settings-field-input--error' : ''}`}
+                      type="password"
+                      value={currentPassword}
+                      onChange={(e) => {
+                        setCurrentPassword(e.target.value);
+                        if (passwordErrors.currentPassword) setPasswordErrors((prev) => ({ ...prev, currentPassword: undefined }));
+                      }}
+                      placeholder="Enter your current password"
+                      autoComplete="current-password"
+                    />
+                    {passwordErrors.currentPassword && (
+                      <span className="settings-field-error">{passwordErrors.currentPassword}</span>
+                    )}
+                  </div>
 
-            <div className="settings-provider-row">
-              <button
-                type="button"
-                className="settings-sync settings-sync--google"
-                onClick={handleGoogleSync}
-                disabled={isGoogleSyncing || isGoogleDisconnecting}
-              >
-                <img src={GOOGLE_ICON} alt="Google" />
-                <span>
-                  {isGoogleSyncing
-                    ? 'Syncing Google account...'
-                    : connectedGoogle
-                      ? 'Re-sync Google account'
-                      : 'Sync Google account'}
-                </span>
-              </button>
+                  <div className="settings-field-row">
+                    <div className="settings-field">
+                      <label className="settings-field-label">New password</label>
+                      <input
+                        className={`settings-field-input${passwordErrors.newPassword ? ' settings-field-input--error' : ''}`}
+                        type="password"
+                        value={newPassword}
+                        onChange={(e) => {
+                          setNewPassword(e.target.value);
+                          if (passwordErrors.newPassword) setPasswordErrors((prev) => ({ ...prev, newPassword: undefined }));
+                        }}
+                        placeholder="Min. 8 characters"
+                        autoComplete="new-password"
+                      />
+                      {passwordErrors.newPassword ? (
+                        <span className="settings-field-error">{passwordErrors.newPassword}</span>
+                      ) : (
+                        <span className="settings-field-hint">At least 8 characters</span>
+                      )}
+                    </div>
 
-              {connectedGoogle && <span className="settings-synced-badge">SYNCED</span>}
+                    <div className="settings-field">
+                      <label className="settings-field-label">Confirm new password</label>
+                      <input
+                        className={`settings-field-input${passwordErrors.confirmPassword ? ' settings-field-input--error' : ''}`}
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => {
+                          setConfirmPassword(e.target.value);
+                          if (passwordErrors.confirmPassword) setPasswordErrors((prev) => ({ ...prev, confirmPassword: undefined }));
+                        }}
+                        placeholder="Repeat new password"
+                        autoComplete="new-password"
+                      />
+                      {passwordErrors.confirmPassword && (
+                        <span className="settings-field-error">{passwordErrors.confirmPassword}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
 
-              {connectedGoogle && (
-                <button
-                  type="button"
-                  className="settings-disconnect"
-                  onClick={() => handleDisconnectProvider('google')}
-                  disabled={isGoogleDisconnecting || isGoogleSyncing}
-                >
-                  {isGoogleDisconnecting ? 'Disconnecting...' : 'Disconnect'}
-                </button>
-              )}
-            </div>
+                <div className="settings-section-footer">
+                  <button type="submit" className="settings-save-btn" disabled={isSavingPassword}>
+                    {isSavingPassword ? 'Updating…' : 'Update password'}
+                  </button>
+                </div>
+              </form>
+            </section>
 
-            <div className="settings-provider-row">
-              <button
-                type="button"
-                className="settings-sync settings-sync--github"
-                onClick={handleGitHubSync}
-                disabled={connectedGitHub || isGitHubSyncing || isGitHubDisconnecting}
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path d="M12 0C5.37 0 0 5.49 0 12.26c0 5.42 3.44 10.02 8.2 11.64.6.12.82-.27.82-.6 0-.3-.01-1.1-.02-2.16-3.34.75-4.04-1.67-4.04-1.67-.55-1.43-1.33-1.81-1.33-1.81-1.09-.76.08-.75.08-.75 1.2.09 1.84 1.27 1.84 1.27 1.07 1.9 2.8 1.35 3.49 1.03.11-.8.42-1.35.76-1.66-2.67-.31-5.48-1.38-5.48-6.14 0-1.36.47-2.46 1.24-3.33-.13-.31-.54-1.58.12-3.3 0 0 1.01-.33 3.3 1.27a11.2 11.2 0 0 1 6 0c2.3-1.6 3.3-1.27 3.3-1.27.66 1.72.25 2.99.12 3.3.77.87 1.24 1.97 1.24 3.33 0 4.77-2.82 5.82-5.5 6.13.43.38.82 1.12.82 2.27 0 1.64-.02 2.95-.02 3.35 0 .33.22.73.83.6A12.27 12.27 0 0 0 24 12.26C24 5.49 18.63 0 12 0Z" />
-                </svg>
-                <span>
-                  {isGitHubSyncing
-                    ? 'Opening GitHub...'
-                    : 'Sync GitHub account'}
-                </span>
-              </button>
+            {/* ── Integrations ── */}
+            <section className="settings-section">
+              <div className="settings-section-header">
+                <p className="settings-section-title">Connected accounts</p>
+                <p className="settings-section-desc">Link your Google or GitHub account for additional features.</p>
+              </div>
+              <div className="settings-section-body">
+                {integrationMessage && (
+                  <div className={`settings-feedback settings-feedback--${integrationMessage.type}`}>
+                    {integrationMessage.text}
+                  </div>
+                )}
 
-              {connectedGitHub && <span className="settings-synced-badge">SYNCED</span>}
+                {/* Google */}
+                <div className="settings-provider-item">
+                  <div className="settings-provider-logo">
+                    <img src={GOOGLE_ICON} alt="Google" />
+                  </div>
+                  <div className="settings-provider-info">
+                    <span className="settings-provider-name">Google</span>
+                    <span className={`settings-provider-status${connectedGoogle ? ' settings-provider-status--connected' : ''}`}>
+                      {connectedGoogle ? 'Connected' : 'Not connected'}
+                    </span>
+                  </div>
+                  <div className="settings-provider-actions">
+                    {connectedGoogle && (
+                      <span className="settings-connected-badge">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" width="10" height="10">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        Connected
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className="settings-connect-btn"
+                      onClick={handleGoogleSync}
+                      disabled={isGoogleSyncing || isGoogleDisconnecting}
+                    >
+                      {isGoogleSyncing ? 'Syncing…' : connectedGoogle ? 'Re-sync' : 'Connect'}
+                    </button>
+                    {connectedGoogle && (
+                      <button
+                        type="button"
+                        className="settings-disconnect-btn"
+                        onClick={() => handleDisconnectProvider('google')}
+                        disabled={isGoogleDisconnecting || isGoogleSyncing}
+                      >
+                        {isGoogleDisconnecting ? 'Removing…' : 'Disconnect'}
+                      </button>
+                    )}
+                  </div>
+                </div>
 
-              {connectedGitHub && (
-                <button
-                  type="button"
-                  className="settings-disconnect"
-                  onClick={() => handleDisconnectProvider('github')}
-                  disabled={isGitHubDisconnecting || isGitHubSyncing}
-                >
-                  {isGitHubDisconnecting ? 'Disconnecting...' : 'Disconnect'}
-                </button>
-              )}
-            </div>
-          </form>
+                {/* GitHub */}
+                <div className="settings-provider-item">
+                  <div className="settings-provider-logo">
+                    <svg viewBox="0 0 24 24" fill="currentColor" color="#0f172a">
+                      <path d="M12 0C5.37 0 0 5.49 0 12.26c0 5.42 3.44 10.02 8.2 11.64.6.12.82-.27.82-.6 0-.3-.01-1.1-.02-2.16-3.34.75-4.04-1.67-4.04-1.67-.55-1.43-1.33-1.81-1.33-1.81-1.09-.76.08-.75.08-.75 1.2.09 1.84 1.27 1.84 1.27 1.07 1.9 2.8 1.35 3.49 1.03.11-.8.42-1.35.76-1.66-2.67-.31-5.48-1.38-5.48-6.14 0-1.36.47-2.46 1.24-3.33-.13-.31-.54-1.58.12-3.3 0 0 1.01-.33 3.3 1.27a11.2 11.2 0 0 1 6 0c2.3-1.6 3.3-1.27 3.3-1.27.66 1.72.25 2.99.12 3.3.77.87 1.24 1.97 1.24 3.33 0 4.77-2.82 5.82-5.5 6.13.43.38.82 1.12.82 2.27 0 1.64-.02 2.95-.02 3.35 0 .33.22.73.83.6A12.27 12.27 0 0 0 24 12.26C24 5.49 18.63 0 12 0Z" />
+                    </svg>
+                  </div>
+                  <div className="settings-provider-info">
+                    <span className="settings-provider-name">GitHub</span>
+                    <span className={`settings-provider-status${connectedGitHub ? ' settings-provider-status--connected' : ''}`}>
+                      {connectedGitHub ? 'Connected — repositories synced' : 'Not connected'}
+                    </span>
+                  </div>
+                  <div className="settings-provider-actions">
+                    {connectedGitHub && (
+                      <span className="settings-connected-badge">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" width="10" height="10">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        Connected
+                      </span>
+                    )}
+                    {!connectedGitHub && (
+                      <button
+                        type="button"
+                        className="settings-connect-btn"
+                        onClick={handleGitHubSync}
+                        disabled={isGitHubSyncing || isGitHubDisconnecting}
+                      >
+                        {isGitHubSyncing ? 'Redirecting…' : 'Connect'}
+                      </button>
+                    )}
+                    {connectedGitHub && (
+                      <button
+                        type="button"
+                        className="settings-disconnect-btn"
+                        onClick={() => handleDisconnectProvider('github')}
+                        disabled={isGitHubDisconnecting || isGitHubSyncing}
+                      >
+                        {isGitHubDisconnecting ? 'Removing…' : 'Disconnect'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </section>
+          </>
         )}
-      </div>
+      </main>
     </div>
   );
 };
