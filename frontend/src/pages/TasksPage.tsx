@@ -250,9 +250,10 @@ const TasksPage = () => {
     }
 
     result.sort((left, right) => {
+      const statusOrder = STATUS_ORDER[left.status] - STATUS_ORDER[right.status];
+      if (statusOrder !== 0) return statusOrder;
       if (sortBy === 'due') return left.dueSort - right.dueSort;
       if (sortBy === 'assignee') return left.assignee.localeCompare(right.assignee);
-      if (sortBy === 'status') return STATUS_ORDER[left.status] - STATUS_ORDER[right.status];
       return 0;
     });
 

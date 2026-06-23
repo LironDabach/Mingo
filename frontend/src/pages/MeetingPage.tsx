@@ -203,6 +203,7 @@ const MeetingPage = () => {
 
   const completedTasks = tasks.filter((task) => task.done);
   const openTasks = tasks.filter((task) => !task.done);
+  const displayedTasks = [...openTasks, ...completedTasks];
   const summaryNarrative = buildMeetingNarrative(
     meetingTitle,
     repositoryLabel,
@@ -387,9 +388,20 @@ const MeetingPage = () => {
     const nextDone = !task.done;
     const previousTasks = tasks;
     setTaskUpdateError('');
-    setTasks((prev) =>
-      prev.map((currentTask) => (currentTask.id === taskId ? { ...currentTask, done: nextDone } : currentTask)),
-    );
+    setTasks((prev) => {
+      const updatedTask = { ...task, done: nextDone };
+      const rest = prev.filter((currentTask) => currentTask.id !== taskId);
+
+      if (nextDone) {
+        const open = rest.filter((currentTask) => !currentTask.done);
+        const done = rest.filter((currentTask) => currentTask.done);
+        return [...open, updatedTask, ...done];
+      }
+
+      const open = rest.filter((currentTask) => !currentTask.done);
+      const done = rest.filter((currentTask) => currentTask.done);
+      return [updatedTask, ...open, ...done];
+    });
 
     try {
       if (task.gitHubIssueId && task.gitHubRepoName && storedUser?._id) {
@@ -564,8 +576,8 @@ const MeetingPage = () => {
 
               <div className="meeting-tasks">
                 {taskUpdateError && <p className="meeting-tasks-error">{taskUpdateError}</p>}
-                {tasks.length > 0 ? (
-                  tasks.map((task) => (
+                {displayedTasks.length > 0 ? (
+                  displayedTasks.map((task) => (
                     <div key={task.id} className={`meeting-task-row${task.done ? ' meeting-task-row--done' : ''}`}>
                       <button
                         type="button"
