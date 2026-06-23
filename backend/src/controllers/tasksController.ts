@@ -245,14 +245,7 @@ class tasksController extends baseController {
       sourceType: "project",
       projectTitle: project.title,
       htmlUrl: item.content?.url,
-      meeting: relatedMeeting
-        ? {
-            _id: relatedMeeting._id,
-            title: relatedMeeting.title,
-            date: relatedMeeting.date,
-            gitHubRepoName: relatedMeeting.gitHubRepoName,
-          }
-        : null,
+      meeting: null,
     };
   }
 
@@ -515,7 +508,7 @@ class tasksController extends baseController {
             { id: project.id, title: project.title },
             item,
             repo.full_name,
-            relatedMeeting,
+            null,
             userId,
           );
         }),
@@ -610,14 +603,6 @@ class tasksController extends baseController {
 
     const issueTasks = issueGroups.flatMap(({ repo, issues }) =>
       issues.map((issue) => {
-        const relatedMeeting = meetings.find((meeting) => {
-          const meetingRepo = this.normalizeRepoName(meeting.gitHubRepoName);
-          return (
-            meetingRepo === this.normalizeRepoName(repo.name) ||
-            meetingRepo === this.normalizeRepoName(repo.full_name)
-          );
-        });
-
         return {
           _id: `github:${repo.id}:${issue.number}`,
           title: issue.title,
@@ -632,14 +617,7 @@ class tasksController extends baseController {
           htmlUrl: issue.html_url,
           createdAt: issue.created_at,
           updatedAt: issue.updated_at,
-          meeting: relatedMeeting
-            ? {
-                _id: relatedMeeting._id,
-                title: relatedMeeting.title,
-                date: relatedMeeting.date,
-                gitHubRepoName: relatedMeeting.gitHubRepoName,
-              }
-            : null,
+          meeting: null,
         };
       }),
     );
@@ -1056,10 +1034,6 @@ class tasksController extends baseController {
         return;
       }
 
-      const task = await this.model.create(payload);
-      meeting.tasks.push(task._id as mongoose.Types.ObjectId);
-      await meeting.save();
-
       const repoFullName =
         typeof req.body.gitHubRepoFullName === "string" &&
         req.body.gitHubRepoFullName.trim()
@@ -1070,25 +1044,41 @@ class tasksController extends baseController {
         const user = await usersModel.findById(req.user._id);
         const authorization = this.getGitHubAuthorization(user);
 
-        if (authorization) {
-          const issueNumber = await this.createGitHubIssue(
-            authorization,
-            repoFullName,
-            task.title || "",
-            task.description,
-          );
-
-          if (issueNumber !== null) {
-            const [repoOwner, repoName] = repoFullName.split("/");
-            await this.model.findByIdAndUpdate(task._id, {
-              gitHubIssueId: issueNumber,
-              gitHubRepoName: repoName ?? repoFullName,
-              gitHubRepoOwner: repoOwner ? req.user._id : undefined,
-            });
-            (task as any).gitHubIssueId = issueNumber;
-          }
+        if (!authorization) {
+          res.status(400).json({ error: "GitHub account is not connected" });
+          return;
         }
+
+        const issueNumber = await this.createGitHubIssue(
+          authorization,
+          repoFullName,
+          String(payload.title || ""),
+          typeof payload.description === "string" ? payload.description : undefined,
+        );
+
+        if (issueNumber === null) {
+          res.status(502).json({ error: "Unable to create GitHub issue" });
+          return;
+        }
+
+        this.clearGitHubTasksCacheForUser(req.user._id.toString());
+
+        res.status(201).json({
+          _id: `github:${repoFullName}:${issueNumber}`,
+          title: payload.title,
+          description: payload.description,
+          status: "To Do",
+          gitHubIssueId: issueNumber,
+          gitHubRepoName: repoFullName,
+          source: "github",
+          sourceType: "issue",
+        });
+        return;
       }
+
+      const task = await this.model.create(payload);
+      meeting.tasks.push(task._id as mongoose.Types.ObjectId);
+      await meeting.save();
 
       res.status(201).json(task);
     } catch (err) {

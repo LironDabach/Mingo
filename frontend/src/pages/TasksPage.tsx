@@ -35,6 +35,8 @@ type RawTask = {
   sourceType?: 'project' | 'issue';
   projectTitle?: string;
   htmlUrl?: string;
+  createdAt?: string;
+  updatedAt?: string;
   meeting?: MeetingOption | null;
 };
 
@@ -98,6 +100,8 @@ const normalizeTask = (task: RawTask): Task => {
     ? `${task.gitHubRepoName || 'MINGO'}-${task.gitHubIssueId}`
     : task.gitHubRepoName || 'Manual';
   const status: TaskStatus = task.status === 'Done' ? 'Done' : 'To Do';
+  const dueDateLabel = formatDueDate(task.dueDate) || 'No due date';
+  const meetingLabel = task.meeting?.title || (task.source === 'github' ? dueDateLabel : 'Unlinked');
 
   return {
     id: task._id,
@@ -106,7 +110,7 @@ const normalizeTask = (task: RawTask): Task => {
       task.description ||
       (task.gitHubIssueId ? `GitHub issue #${task.gitHubIssueId}` : 'Untitled task'),
     ...(task.meeting?._id ? { meetingId: task.meeting._id } : {}),
-    meeting: task.meeting?.title || 'Unlinked',
+    meeting: meetingLabel,
     ...(assigneeId ? { assigneeId } : {}),
     assignee: assigneeLabel,
     due: formatDueDate(task.dueDate),
