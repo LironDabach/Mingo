@@ -139,32 +139,6 @@ const MeetingPage = () => {
   const [emailSending, setEmailSending] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [topics, setTopics] = useState<string[]>([]);
-
-  useEffect(() => {
-    const loadMeetingTopics = async () => {
-      const meetingId =
-        meetingIdRef.current ||
-        parsedDraft?.id ||
-        localStorage.getItem('currentMeetingId') ||
-        '';
-
-      if (!meetingId) return;
-
-      try {
-        const response = await fetchWithAuth(`/api/meetings/meetings/${meetingId}`);
-        if (!response.ok) return;
-        const data = await response.json();
-        if (Array.isArray(data.topics) && data.topics.length > 0) {
-          setTopics(data.topics);
-        }
-      } catch {
-        // topics are optional — don't block the page
-      }
-    };
-
-    loadMeetingTopics();
-  }, []);
 
   useEffect(() => {
     const loadTasks = async () => {
@@ -337,7 +311,6 @@ const MeetingPage = () => {
           status: 'completed',
           duration,
           summary: generatedSummary,
-          topics,
           endedAt: new Date().toISOString(),
         }),
       });
@@ -375,7 +348,6 @@ const MeetingPage = () => {
         method: 'POST',
         body: JSON.stringify({
           summary: summaryText || summaryNarrative,
-          topics,
           closedTasks: completedTasks.map((task) => `${task.title} (${task.assignee}, ${task.tag})`),
           openTasks: openTasks.map((task) => `${task.title} (${task.assignee}, ${task.due})`),
         }),
@@ -537,32 +509,6 @@ const MeetingPage = () => {
           </article>
 
           <div className="meeting-side">
-            <article className="meeting-card">
-              <header className="meeting-card__header">
-                <h2>Topics</h2>
-              </header>
-
-              <div className="meeting-topics">
-                {topics.length > 0 ? topics.map((topic, index) => (
-                  <div key={index} className="meeting-topic">
-                    <div className="meeting-topic__icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 2v4" /><path d="M12 18v4" />
-                        <path d="m4.93 4.93 2.83 2.83" /><path d="m16.24 16.24 2.83 2.83" />
-                        <path d="M2 12h4" /><path d="M18 12h4" />
-                        <path d="m4.93 19.07 2.83-2.83" /><path d="m16.24 7.76 2.83-2.83" />
-                      </svg>
-                    </div>
-                    <div className="meeting-topic__content">
-                      <strong>{topic}</strong>
-                    </div>
-                  </div>
-                )) : (
-                  <p className="meeting-tasks-empty">No topics recorded yet.</p>
-                )}
-              </div>
-            </article>
-
             <article className="meeting-card">
               <header className="meeting-card__header">
                 <h2>Open Tasks</h2>

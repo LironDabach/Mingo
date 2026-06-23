@@ -54,30 +54,6 @@ router.get("/meetings/:meetingId/mingoAgent/generateSummary", authenticate, ming
 
 /**
  * @openapi
- * /api/meetings/{meetingId}/mingoAgent/generateTopics:
- *   get:
- *     tags: [Mingo Agent]
- *     summary: Generate discussion topics for a meeting
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: meetingId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       '200':
- *         description: Topics generated
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/GenerateTopicsResponse'
- */
-router.get("/meetings/:meetingId/mingoAgent/generateTopics", authenticate, mingoAgentController.generateTopics.bind(mingoAgentController));
-
-/**
- * @openapi
  * /api/meetings/{meetingId}/mingoAgent/generateReply:
  *   post:
  *     tags: [Mingo Agent]

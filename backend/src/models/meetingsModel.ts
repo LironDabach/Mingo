@@ -57,11 +57,6 @@ const meetingSchema = new mongoose.Schema({
       lowercase: true,
     },
   ],
-  topics: [
-    {
-      type: String,
-    },
-  ],
   tasks: [
     {
       type: mongoose.Schema.Types.ObjectId,

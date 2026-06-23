@@ -68,23 +68,6 @@ class mingoAgentController extends baseController {
       res.status(500).send("Error: Can't generate summary for the meeting");
     }
   }
-
-  // Generate topics for the meeting
-  async generateTopics(req: AuthRequest, res: Response) {
-    const meetingId = req.params.meetingId;
-
-    if (!meetingId) {
-      return res.status(400).json({ error: "Meeting ID is required" });
-    }
-
-    try {
-      const result = await mingoAgentService.generateTopics(meetingId);
-      res.json({ topics: result.topics });
-    } catch (err) {
-      console.error(err);
-      res.status(500).send("Error: Can't generate topics for the meeting");
-    }
-  }
 }
 
 export default new mingoAgentController();

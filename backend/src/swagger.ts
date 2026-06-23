@@ -180,10 +180,6 @@ export const buildSwaggerSpec = () => {
                 type: "string",
                 example: "67e11a2b9fc13e17d8b9bb33",
               },
-              topics: {
-                type: "array",
-                items: { type: "string" },
-              },
               tasks: {
                 type: "array",
                 items: { type: "string" },
@@ -224,10 +220,6 @@ export const buildSwaggerSpec = () => {
               transcriptId: {
                 type: "string",
                 example: "67e11a2b9fc13e17d8b9bb33",
-              },
-              topics: {
-                type: "array",
-                items: { type: "string" },
               },
               tasks: {
                 type: "array",
@@ -377,27 +369,6 @@ export const buildSwaggerSpec = () => {
               },
             },
             required: ["summary"],
-          },
-          TopicItem: {
-            type: "object",
-            properties: {
-              title: { type: "string", example: "Roadmap" },
-              description: {
-                type: "string",
-                example: "Discussion related to roadmap priorities.",
-              },
-            },
-            required: ["title", "description"],
-          },
-          GenerateTopicsResponse: {
-            type: "object",
-            properties: {
-              topics: {
-                type: "array",
-                items: { $ref: "#/components/schemas/TopicItem" },
-              },
-            },
-            required: ["topics"],
           },
           AverageDurationResponse: {
             type: "object",

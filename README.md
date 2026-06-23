@@ -82,5 +82,4 @@ LLM services, speech-to-text services, email integrations, and GitHub API for ta
 3️⃣ AI analyzes the transcript  
 4️⃣ Mingo generates:  
 - Meeting summary  
-- Key topics  
 - Action items
