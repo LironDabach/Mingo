@@ -170,5 +170,6 @@ router.delete("/meetings/:meetingId/tasks/:taskId", authenticate, tasksControlle
  *                 $ref: '#/components/schemas/Task'
  */
 router.get("/users/:userId/tasks", authenticate, tasksController.getByUserId.bind(tasksController));
+router.put("/users/:userId/tasks/github-status", authenticate, tasksController.updateGitHubStatus.bind(tasksController));
 
 export default router;

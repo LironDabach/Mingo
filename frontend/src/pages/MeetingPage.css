@@ -758,6 +758,15 @@
 .meeting-task-status-dot--done {
   background: #10b981;
   border: none;
+  color: #fff;
+}
+
+.meeting-tasks-error {
+  margin: 0;
+  padding: 10px 20px;
+  color: #dc2626;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .meeting-task-row-info {

@@ -457,6 +457,7 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  cursor: default;
 }
 
 .task-status-dot svg {
@@ -465,8 +466,12 @@
 }
 
 .task-status-dot--open {
-  border: 2px solid var(--border-strong);
-  background: var(--surface);
+  width: 10px;
+  height: 10px;
+  margin: 0 6px;
+  border: none;
+  background: #cbd5e1;
+  box-shadow: 0 0 0 4px #f1f5f9;
 }
 
 .task-status-dot--closed {
