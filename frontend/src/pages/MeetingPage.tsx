@@ -27,12 +27,16 @@ type ChatMessage = {
 };
 
 type Task = {
-  id: number;
+  id: string;
+  meetingId?: string;
   title: string;
   assignee: string;
   due: string;
   tag: string;
   done: boolean;
+  source: 'github' | 'local';
+  gitHubIssueId?: number;
+  gitHubRepoName?: string;
   htmlUrl?: string;
 };
 
@@ -139,6 +143,7 @@ const MeetingPage = () => {
   const [emailSending, setEmailSending] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [taskUpdateError, setTaskUpdateError] = useState('');
 
   useEffect(() => {
     const loadTasks = async () => {
@@ -169,12 +174,16 @@ const MeetingPage = () => {
 
         const backendTasks = (data.tasks || data || []).map(
           (task: any, index: number) => ({
-            id: task.id || task._id || Date.now() + index,
+            id: String(task.id || task._id || Date.now() + index),
+            meetingId: task.meeting?._id,
             title: task.title || task.description || 'Untitled task',
             assignee: task.assignee || task.assigneeName || task.owner || 'Unassigned',
             due: task.due || task.dueDate || 'No due date',
             tag: task.tag || task.jiraKey || `TASK-${task.gitHubIssueId || index + 1}`,
             htmlUrl: task.htmlUrl || task.html_url || '',
+            source: task.source === 'github' ? 'github' : 'local',
+            gitHubIssueId: task.gitHubIssueId,
+            gitHubRepoName: task.gitHubRepoName || repo,
             done:
               typeof task.status === 'string' &&
               task.status.toLowerCase() === 'done',
@@ -371,10 +380,49 @@ const MeetingPage = () => {
     }
   };
 
-  const toggleTask = (taskId: number) => {
+  const toggleTask = async (taskId: string) => {
+    const task = tasks.find((currentTask) => currentTask.id === taskId);
+    if (!task) return;
+
+    const nextDone = !task.done;
+    const previousTasks = tasks;
+    setTaskUpdateError('');
     setTasks((prev) =>
-      prev.map((task) => (task.id === taskId ? { ...task, done: !task.done } : task)),
+      prev.map((currentTask) => (currentTask.id === taskId ? { ...currentTask, done: nextDone } : currentTask)),
     );
+
+    try {
+      if (task.gitHubIssueId && task.gitHubRepoName && storedUser?._id) {
+        const response = await fetchWithAuth(`/api/users/${storedUser._id}/tasks/github-status`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            gitHubIssueId: task.gitHubIssueId,
+            gitHubRepoName: task.gitHubRepoName,
+            status: nextDone ? 'Done' : 'To Do',
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Unable to update GitHub issue.');
+        }
+
+        return;
+      }
+
+      if (task.meetingId) {
+        const response = await fetchWithAuth(`/api/meetings/${task.meetingId}/tasks/${task.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ status: nextDone ? 'Done' : 'To Do' }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Unable to update task status.');
+        }
+      }
+    } catch (error) {
+      setTasks(previousTasks);
+      setTaskUpdateError(error instanceof Error ? error.message : 'Unable to update task status.');
+    }
   };
 
   return (
@@ -511,22 +559,29 @@ const MeetingPage = () => {
           <div className="meeting-side">
             <article className="meeting-card">
               <header className="meeting-card__header">
-                <h2>Open Tasks</h2>
+                <h2>Tasks</h2>
               </header>
 
               <div className="meeting-tasks">
-                {openTasks.length > 0 ? (
-                  openTasks.map((task) => (
-                    <div key={task.id} className="meeting-task-row">
+                {taskUpdateError && <p className="meeting-tasks-error">{taskUpdateError}</p>}
+                {tasks.length > 0 ? (
+                  tasks.map((task) => (
+                    <div key={task.id} className={`meeting-task-row${task.done ? ' meeting-task-row--done' : ''}`}>
                       <button
                         type="button"
-                        className="meeting-task-status-dot meeting-task-status-dot--todo"
-                        onClick={() => toggleTask(task.id)}
-                        aria-label="Mark as done"
-                      />
+                        className={`meeting-task-status-dot${task.done ? ' meeting-task-status-dot--done' : ' meeting-task-status-dot--todo'}`}
+                        onClick={() => void toggleTask(task.id)}
+                        aria-label={task.done ? 'Mark as to do' : 'Mark as done'}
+                      >
+                        {task.done && (
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                      </button>
 
                       <div className="meeting-task-row-info">
-                        <strong className="meeting-task-row-title">
+                        <strong className={`meeting-task-row-title${task.done ? ' meeting-task-row-title--done' : ''}`}>
                           {task.title}
                         </strong>
 
@@ -555,7 +610,7 @@ const MeetingPage = () => {
                 ) : (
                   <div className="meeting-tasks-empty">
                     <span className="meeting-tasks-empty__icon">✓</span>
-                    <span>No open tasks</span>
+                    <span>No tasks</span>
                   </div>
                 )}
               </div>

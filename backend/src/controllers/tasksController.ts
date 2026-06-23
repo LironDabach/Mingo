@@ -686,6 +686,69 @@ class tasksController extends baseController {
     }
   }
 
+  private clearGitHubTasksCacheForUser(userId: string) {
+    Array.from(githubTasksCache.keys()).forEach((key) => {
+      if (key.startsWith(`${userId}:`)) {
+        githubTasksCache.delete(key);
+      }
+    });
+  }
+
+  private async updateGitHubIssueState(
+    authorization: string,
+    repoFullName: string,
+    issueNumber: number,
+    status: string,
+  ) {
+    const response = await fetch(
+      `https://api.github.com/repos/${repoFullName}/issues/${issueNumber}`,
+      {
+        method: "PATCH",
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: authorization,
+          "Content-Type": "application/json",
+          "User-Agent": "Mingo",
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+        body: JSON.stringify({
+          state: status === "Done" ? "closed" : "open",
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return (await response.json()) as {
+      number: number;
+      state: string;
+      html_url?: string;
+      title?: string;
+    };
+  }
+
+  private async resolveGitHubRepoFullName(
+    authorization: string,
+    repoName: string,
+  ) {
+    if (repoName.includes("/")) {
+      return repoName;
+    }
+
+    const repos = await this.fetchGitHubJson<Array<{ name: string; full_name: string }>>(
+      "https://api.github.com/user/repos?sort=updated&per_page=100",
+      authorization,
+    );
+
+    const match = repos?.find(
+      (repo) => this.normalizeRepoName(repo.name) === this.normalizeRepoName(repoName),
+    );
+
+    return match?.full_name || repoName;
+  }
+
   async suggestFromTranscript(req: AuthRequest, res: Response) {
     const { meetingId } = req.params;
 
@@ -1069,6 +1132,76 @@ class tasksController extends baseController {
     } catch (err) {
       console.error(err);
       res.status(500).send("Error: Can't update task");
+    }
+  }
+
+  async updateGitHubStatus(req: AuthRequest, res: Response) {
+    const { userId } = req.params;
+    const status = this.normalizeStatus(req.body.status);
+    const issueNumber = Number(req.body.gitHubIssueId);
+    const requestedRepoName =
+      typeof req.body.gitHubRepoName === "string" && req.body.gitHubRepoName.trim()
+        ? req.body.gitHubRepoName.trim()
+        : "";
+
+    if (!userId || !req.user?._id || userId !== req.user._id.toString()) {
+      res.status(403).json({ error: "You can only update your own GitHub tasks" });
+      return;
+    }
+
+    if (!requestedRepoName || !Number.isFinite(issueNumber)) {
+      res.status(400).json({ error: "GitHub repository and issue number are required" });
+      return;
+    }
+
+    try {
+      const user = await usersModel.findById(userId);
+      const authorization = this.getGitHubAuthorization(user);
+
+      if (!authorization) {
+        res.status(400).json({ error: "GitHub account is not connected" });
+        return;
+      }
+
+      const repoFullName = await this.resolveGitHubRepoFullName(
+        authorization,
+        requestedRepoName,
+      );
+      const githubIssue = await this.updateGitHubIssueState(
+        authorization,
+        repoFullName,
+        issueNumber,
+        status,
+      );
+
+      if (!githubIssue) {
+        res.status(502).json({ error: "Unable to update GitHub issue" });
+        return;
+      }
+
+      const repoShortName = repoFullName.split("/").pop() || repoFullName;
+      await this.model.updateMany(
+        {
+          gitHubIssueId: issueNumber,
+          $or: [
+            { gitHubRepoName: repoFullName },
+            { gitHubRepoName: repoShortName },
+          ],
+        },
+        { status },
+      );
+
+      this.clearGitHubTasksCacheForUser(userId);
+
+      res.json({
+        gitHubIssueId: issueNumber,
+        gitHubRepoName: repoFullName,
+        status,
+        htmlUrl: githubIssue.html_url,
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).send("Error: Can't update GitHub task status");
     }
   }
 

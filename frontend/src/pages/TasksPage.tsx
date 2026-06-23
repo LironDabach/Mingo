@@ -60,6 +60,8 @@ type Task = {
   status: TaskStatus;
   source: 'github' | 'local';
   sourceType?: 'project' | 'issue';
+  gitHubIssueId?: number;
+  gitHubRepoName?: string;
   projectTitle?: string;
   htmlUrl?: string;
 };
@@ -90,6 +92,7 @@ const isDateOverdue = (value?: string, status?: TaskStatus): boolean => {
 const normalizeTask = (task: RawTask): Task => {
   const assignee = typeof task.assigneeId === 'object' ? task.assigneeId : null;
   const assigneeLabel = assignee ? getUserLabel(assignee) : task.assigneeName || 'Unassigned';
+  const assigneeId = getAssigneeId(task.assigneeId);
   const dueTime = task.dueDate ? new Date(task.dueDate).getTime() : Number.POSITIVE_INFINITY;
   const issueTag = task.gitHubIssueId
     ? `${task.gitHubRepoName || 'MINGO'}-${task.gitHubIssueId}`
@@ -104,7 +107,7 @@ const normalizeTask = (task: RawTask): Task => {
       (task.gitHubIssueId ? `GitHub issue #${task.gitHubIssueId}` : 'Untitled task'),
     ...(task.meeting?._id ? { meetingId: task.meeting._id } : {}),
     meeting: task.meeting?.title || 'Unlinked',
-    ...(getAssigneeId(task.assigneeId) ? { assigneeId: getAssigneeId(task.assigneeId) } : {}),
+    ...(assigneeId ? { assigneeId } : {}),
     assignee: assigneeLabel,
     due: formatDueDate(task.dueDate),
     dueSort: Number.isNaN(dueTime) ? Number.POSITIVE_INFINITY : dueTime,
@@ -113,6 +116,8 @@ const normalizeTask = (task: RawTask): Task => {
     status,
     source: task.source === 'github' ? 'github' : 'local',
     ...(task.sourceType ? { sourceType: task.sourceType } : {}),
+    ...(task.gitHubIssueId ? { gitHubIssueId: task.gitHubIssueId } : {}),
+    ...(task.gitHubRepoName ? { gitHubRepoName: task.gitHubRepoName } : {}),
     ...(task.projectTitle ? { projectTitle: task.projectTitle } : {}),
     ...(task.htmlUrl ? { htmlUrl: task.htmlUrl } : {}),
   };
@@ -262,7 +267,38 @@ const TasksPage = () => {
 
   const updateTaskStatus = async (task: Task, nextStatus: TaskStatus) => {
     if (task.source === 'github') {
-      setError('GitHub tasks must be updated in GitHub Issues.');
+      if (!currentUser?._id || !task.gitHubIssueId || !task.gitHubRepoName) {
+        setError('Only GitHub issues can be updated from Mingo.');
+        return;
+      }
+
+      const previousTasks = tasks;
+      setError('');
+      setTasks((prev) =>
+        prev.map((t) => (t.id === task.id ? { ...t, status: nextStatus, isOverdue: false } : t)),
+      );
+
+      try {
+        const response = await fetchWithAuth(`/api/users/${currentUser._id}/tasks/github-status`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            gitHubIssueId: task.gitHubIssueId,
+            gitHubRepoName: task.gitHubRepoName,
+            status: nextStatus,
+          }),
+        });
+        const data = await parseResponseBody(response);
+        if (!response.ok) {
+          throw new Error(
+            data && typeof data === 'object' && 'error' in data && typeof data.error === 'string'
+              ? data.error
+              : 'Unable to update GitHub issue.',
+          );
+        }
+      } catch (err) {
+        setTasks(previousTasks);
+        setError(err instanceof Error ? err.message : 'Unable to update GitHub issue.');
+      }
       return;
     }
     if (!task.meetingId) {
@@ -548,16 +584,17 @@ const TasksPage = () => {
                   {/* Status toggle button */}
                   <button
                     type="button"
-                    className={`task-status-btn${task.status === 'Done' ? ' task-status-btn--done' : ''}${task.source === 'github' ? ' task-status-btn--disabled' : ''}`}
+                    className={`task-status-btn${task.status === 'Done' ? ' task-status-btn--done' : ''}`}
                     title={
-                      task.source === 'github'
-                        ? 'Update this in GitHub Issues'
-                        : task.status === 'Done'
-                          ? 'Mark as To Do'
+                      task.status === 'Done'
+                        ? task.source === 'github'
+                          ? 'Reopen in GitHub'
+                          : 'Mark as To Do'
+                        : task.source === 'github'
+                          ? 'Close in GitHub'
                           : 'Mark as Done'
                     }
                     onClick={() => {
-                      if (task.source === 'github') return;
                       void updateTaskStatus(task, task.status === 'Done' ? 'To Do' : 'Done');
                     }}
                   >
