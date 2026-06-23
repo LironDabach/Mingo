@@ -262,8 +262,8 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
 
     try {
       await Promise.all(
-        tasksToCreate.map((task) =>
-          fetchWithAuth(`/api/meetings/${result.meeting._id}/tasks`, {
+        tasksToCreate.map(async (task) => {
+          const response = await fetchWithAuth(`/api/meetings/${result.meeting._id}/tasks`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -272,8 +272,12 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
               createGitHubIssue: Boolean(selectedRepoFullName),
               gitHubRepoFullName: selectedRepoFullName,
             }),
-          }),
-        ),
+          });
+
+          if (!response.ok) {
+            throw new Error('Task creation failed');
+          }
+        }),
       );
       setTasksCreated(true);
     } catch {

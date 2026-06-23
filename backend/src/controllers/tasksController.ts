@@ -1056,10 +1056,6 @@ class tasksController extends baseController {
         return;
       }
 
-      const task = await this.model.create(payload);
-      meeting.tasks.push(task._id as mongoose.Types.ObjectId);
-      await meeting.save();
-
       const repoFullName =
         typeof req.body.gitHubRepoFullName === "string" &&
         req.body.gitHubRepoFullName.trim()
@@ -1070,25 +1066,41 @@ class tasksController extends baseController {
         const user = await usersModel.findById(req.user._id);
         const authorization = this.getGitHubAuthorization(user);
 
-        if (authorization) {
-          const issueNumber = await this.createGitHubIssue(
-            authorization,
-            repoFullName,
-            task.title || "",
-            task.description,
-          );
-
-          if (issueNumber !== null) {
-            const [repoOwner, repoName] = repoFullName.split("/");
-            await this.model.findByIdAndUpdate(task._id, {
-              gitHubIssueId: issueNumber,
-              gitHubRepoName: repoName ?? repoFullName,
-              gitHubRepoOwner: repoOwner ? req.user._id : undefined,
-            });
-            (task as any).gitHubIssueId = issueNumber;
-          }
+        if (!authorization) {
+          res.status(400).json({ error: "GitHub account is not connected" });
+          return;
         }
+
+        const issueNumber = await this.createGitHubIssue(
+          authorization,
+          repoFullName,
+          String(payload.title || ""),
+          typeof payload.description === "string" ? payload.description : undefined,
+        );
+
+        if (issueNumber === null) {
+          res.status(502).json({ error: "Unable to create GitHub issue" });
+          return;
+        }
+
+        this.clearGitHubTasksCacheForUser(req.user._id.toString());
+
+        res.status(201).json({
+          _id: `github:${repoFullName}:${issueNumber}`,
+          title: payload.title,
+          description: payload.description,
+          status: "To Do",
+          gitHubIssueId: issueNumber,
+          gitHubRepoName: repoFullName,
+          source: "github",
+          sourceType: "issue",
+        });
+        return;
       }
+
+      const task = await this.model.create(payload);
+      meeting.tasks.push(task._id as mongoose.Types.ObjectId);
+      await meeting.save();
 
       res.status(201).json(task);
     } catch (err) {
