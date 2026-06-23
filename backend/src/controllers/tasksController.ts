@@ -245,14 +245,7 @@ class tasksController extends baseController {
       sourceType: "project",
       projectTitle: project.title,
       htmlUrl: item.content?.url,
-      meeting: relatedMeeting
-        ? {
-            _id: relatedMeeting._id,
-            title: relatedMeeting.title,
-            date: relatedMeeting.date,
-            gitHubRepoName: relatedMeeting.gitHubRepoName,
-          }
-        : null,
+      meeting: null,
     };
   }
 
@@ -515,7 +508,7 @@ class tasksController extends baseController {
             { id: project.id, title: project.title },
             item,
             repo.full_name,
-            relatedMeeting,
+            null,
             userId,
           );
         }),
@@ -610,14 +603,6 @@ class tasksController extends baseController {
 
     const issueTasks = issueGroups.flatMap(({ repo, issues }) =>
       issues.map((issue) => {
-        const relatedMeeting = meetings.find((meeting) => {
-          const meetingRepo = this.normalizeRepoName(meeting.gitHubRepoName);
-          return (
-            meetingRepo === this.normalizeRepoName(repo.name) ||
-            meetingRepo === this.normalizeRepoName(repo.full_name)
-          );
-        });
-
         return {
           _id: `github:${repo.id}:${issue.number}`,
           title: issue.title,
@@ -632,14 +617,7 @@ class tasksController extends baseController {
           htmlUrl: issue.html_url,
           createdAt: issue.created_at,
           updatedAt: issue.updated_at,
-          meeting: relatedMeeting
-            ? {
-                _id: relatedMeeting._id,
-                title: relatedMeeting.title,
-                date: relatedMeeting.date,
-                gitHubRepoName: relatedMeeting.gitHubRepoName,
-              }
-            : null,
+          meeting: null,
         };
       }),
     );
