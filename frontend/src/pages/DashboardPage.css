@@ -493,16 +493,31 @@
 .recent-item {
   display: flex;
   align-items: center;
+  width: 100%;
   gap: 20px;
   padding: 18px 24px;
   border-bottom: 1px solid var(--border);
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
   background: var(--surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
   transition: background 0.15s;
   cursor: default;
 }
 
-.recent-item:hover {
+.recent-item--clickable {
+  cursor: pointer;
+}
+
+.recent-item--clickable:hover {
   background: #fafbff;
+}
+
+.recent-item:disabled {
+  opacity: 1;
 }
 
 .recent-item:last-child {

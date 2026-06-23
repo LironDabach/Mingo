@@ -40,6 +40,12 @@ type Task = {
   htmlUrl?: string;
 };
 
+const INITIAL_MINGO_MESSAGE: ChatMessage = {
+  id: 1,
+  sender: 'mingo',
+  text: "Hi, I'm Mingo. I'm here to help you capture decisions, track tasks, and keep this meeting moving. Ask me anything whenever you're ready.",
+};
+
 const formatMeetingDate = (value?: string) => {
   const date = value ? new Date(value) : new Date();
 
@@ -92,7 +98,7 @@ const MeetingPage = () => {
   const meetingDate = formatMeetingDate(parsedDraft?.date);
   const [actualDuration, setActualDuration] = useState('');
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MINGO_MESSAGE]);
 
   useEffect(() => {
     const loadChatHistory = async () => {
@@ -115,7 +121,7 @@ const MeetingPage = () => {
 
         const data = await response.json();
 
-        if (data?.messages) {
+        if (data?.messages?.length) {
           const backendMessages = data.messages.map((msg: any, index: number) => ({
             id: Date.now() + index,
             sender: msg.sender,
