@@ -26,6 +26,7 @@ type TranscribeAudioInput = {
   date?: string | Date;
   gitHubRepoName?: string;
   attendeeEmails?: string[];
+  durationSeconds?: number | undefined;
 };
 
 const upload = multer({
@@ -133,11 +134,12 @@ const transcribeAudio = async ({
   date,
   gitHubRepoName,
   attendeeEmails,
+  durationSeconds,
 }: TranscribeAudioInput) => {
   const filePath = file.path;
 
   try {
-    const [transcriptionText, duration] = await Promise.all([
+    const [transcriptionText, ffprobeDuration] = await Promise.all([
       requestTranscription(filePath),
       getAudioDurationInSeconds(filePath),
     ]);
@@ -150,6 +152,7 @@ const transcribeAudio = async ({
       attendeeEmails,
     });
 
+    const duration = ffprobeDuration ?? durationSeconds;
     if (typeof duration === "number") {
       await result.meeting.updateOne({ duration });
       result.meeting.duration = duration;

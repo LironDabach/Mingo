@@ -1,6 +1,3 @@
-import http from "http";
-import https from "https";
-
 export class LlmServiceError extends Error {
   statusCode: number;
 
@@ -25,122 +22,81 @@ type GenerateOptions = {
 
 type GenerateResponse = {
   response: string;
-  model?: string;
-  created_at?: string;
-  done?: boolean;
+  model?: string | undefined;
+  created_at?: string | undefined;
+  done?: boolean | undefined;
 };
 
 class LlmService {
-  private getConfig() {
-    const baseUrl = process.env.LLM_BASE_URL;
-    const user = process.env.LLM_USER;
-    const pass = process.env.LLM_PASS;
-    const timeoutMs = Number(process.env.LLM_TIMEOUT_MS || "60000");
-    const defaultModel = process.env.LLM_MODEL || "llama3.1:8b";
-
-    if (!baseUrl || !user || !pass) {
-      throw new LlmServiceError("LLM service credentials are missing", 500);
+  private getApiKey() {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new LlmServiceError("OpenAI API key is missing", 500);
     }
-
-    return { baseUrl, user, pass, timeoutMs, defaultModel };
+    return apiKey;
   }
 
-  private async postJson(urlString: string, payload: Record<string, unknown>) {
-    const { user, pass, timeoutMs } = this.getConfig();
-    const encodedCredentials = Buffer.from(`${user}:${pass}`).toString(
-      "base64",
-    );
-    const body = JSON.stringify(payload);
-    const url = new URL(urlString);
-    const isHttps = url.protocol === "https:";
-    const client = isHttps ? https : http;
-
-    return new Promise<{ statusCode: number; data: any }>((resolve, reject) => {
-      const req = client.request(
-        {
-          protocol: url.protocol,
-          hostname: url.hostname,
-          port: url.port || (isHttps ? 443 : 80),
-          path: `${url.pathname}${url.search}`,
-          method: "POST",
-          headers: {
-            Authorization: `Basic ${encodedCredentials}`,
-            "Content-Type": "application/json",
-            "Content-Length": Buffer.byteLength(body),
-          },
-          timeout: timeoutMs,
-        },
-        (res) => {
-          let responseData = "";
-          res.setEncoding("utf8");
-          res.on("data", (chunk) => {
-            responseData += chunk;
-          });
-          res.on("end", () => {
-            const statusCode = res.statusCode || 500;
-            try {
-              const parsed = responseData ? JSON.parse(responseData) : {};
-              resolve({ statusCode, data: parsed });
-            } catch (error) {
-              reject(
-                new LlmServiceError(
-                  "Invalid JSON response from LLM service",
-                  502,
-                ),
-              );
-            }
-          });
-        },
-      );
-
-      req.on("timeout", () => {
-        req.destroy(new Error("timeout"));
-      });
-
-      req.on("error", (error: Error) => {
-        if (error.message === "timeout") {
-          reject(new LlmServiceError("LLM service request timed out", 504));
-          return;
-        }
-        reject(new LlmServiceError("Failed to connect to LLM service", 503));
-      });
-
-      req.write(body);
-      req.end();
-    });
+  private getDefaultModel() {
+    return process.env.LLM_MODEL || "gpt-4o-mini";
   }
 
   async generate(options: GenerateOptions): Promise<GenerateResponse> {
-    const { baseUrl, defaultModel } = this.getConfig();
-    const payload = {
-      model: options.model || defaultModel,
-      prompt: options.prompt,
-      stream: options.stream ?? false,
-      format: options.format,
-      options: options.options || {},
+    const apiKey = this.getApiKey();
+    const model = options.model || this.getDefaultModel();
+
+    const payload: Record<string, unknown> = {
+      model,
+      messages: [{ role: "user", content: options.prompt }],
+      temperature: options.options?.temperature ?? 0.2,
+      top_p: options.options?.top_p ?? 0.9,
+      max_tokens: options.options?.num_predict ?? 400,
     };
 
-    const { statusCode, data } = await this.postJson(
-      `${baseUrl.replace(/\/$/, "")}/api/generate`,
-      payload,
-    );
-
-    if (statusCode >= 200 && statusCode < 300) {
-      return data as GenerateResponse;
-    }
-    if (statusCode === 401) {
-      throw new LlmServiceError("LLM authentication failed", 401);
-    }
-    if (statusCode === 429) {
-      throw new LlmServiceError("LLM rate limit exceeded", 429);
-    }
-    if (statusCode >= 500) {
-      throw new LlmServiceError("LLM service unavailable", 503);
+    if (options.format === "json") {
+      payload.response_format = { type: "json_object" };
     }
 
-    const errorMessage =
-      typeof data?.error === "string" ? data.error : "LLM request failed";
-    throw new LlmServiceError(errorMessage, statusCode);
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        throw new LlmServiceError("OpenAI authentication failed", 401);
+      }
+      if (response.status === 429) {
+        throw new LlmServiceError("OpenAI rate limit exceeded", 429);
+      }
+      if (response.status >= 500) {
+        throw new LlmServiceError("OpenAI service unavailable", 503);
+      }
+      const errorData = (await response.json().catch(() => ({}))) as {
+        error?: { message?: string };
+      };
+      throw new LlmServiceError(
+        errorData?.error?.message || "OpenAI request failed",
+        response.status,
+      );
+    }
+
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+      model?: string;
+      created?: number;
+    };
+
+    const content = data.choices?.[0]?.message?.content?.trim() ?? "";
+
+    return {
+      response: content,
+      model: data.model,
+      done: true,
+    };
   }
 }
 

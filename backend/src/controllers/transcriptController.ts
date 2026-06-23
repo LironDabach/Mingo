@@ -37,6 +37,12 @@ class transcriptController extends baseController {
     }
 
     try {
+      const rawDuration = req.body?.durationSeconds;
+      const durationSeconds =
+        rawDuration !== undefined && rawDuration !== null && rawDuration !== ''
+          ? Number(rawDuration)
+          : undefined;
+
       const result = await transcriptMP3Service.transcribeAudio({
         file: req.file,
         organizerId: req.user._id,
@@ -48,6 +54,7 @@ class transcriptController extends baseController {
           : typeof req.body?.attendeeEmails === "string"
             ? req.body.attendeeEmails.split(",")
             : [],
+        durationSeconds: typeof durationSeconds === 'number' && Number.isFinite(durationSeconds) ? durationSeconds : undefined,
       });
 
       return res.status(201).json(result);

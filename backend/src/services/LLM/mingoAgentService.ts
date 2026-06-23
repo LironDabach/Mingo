@@ -709,12 +709,33 @@ class MingoAgentService {
       typeof meeting?.gitHubRepoName === "string" ? meeting.gitHubRepoName.trim() : "";
 
     if (repoName) {
+      // Try GitHub first. If it responds, it is the sole authoritative source for
+      // this repo — skip the local DB query entirely to avoid duplication.
+      const githubResult = await this.fetchGitHubIssueFactsForRepo(repoName, userId);
+
+      if (githubResult.authoritativeRepo) {
+        const authoritativeRepo = this.normalizeRepoName(githubResult.authoritativeRepo);
+        const meetingLevelFacts = facts.filter((fact) => {
+          const factRepo = this.normalizeRepoName(fact.repo);
+          return (
+            !factRepo ||
+            (factRepo !== authoritativeRepo &&
+              !authoritativeRepo.endsWith(`/${factRepo}`) &&
+              !factRepo.endsWith(`/${authoritativeRepo}`))
+          );
+        });
+
+        return this.summarizeTaskFacts(
+          [...meetingLevelFacts, ...githubResult.facts],
+          [`github:${githubResult.authoritativeRepo}`],
+        );
+      }
+
+      // GitHub not connected or unavailable — fall back to local DB.
       const userTaskQuery = this.tasks
         .find(
           userId
-            ? {
-                $or: [{ gitHubRepoOwner: userId }, { assigneeId: userId }],
-              }
+            ? { $or: [{ gitHubRepoOwner: userId }, { assigneeId: userId }] }
             : {},
         )
         .populate("assigneeId", "fullname email username");
@@ -736,31 +757,6 @@ class MingoAgentService {
         .forEach((task: any) => {
           facts.push(this.buildTaskFact(task, "repo_task", meeting));
         });
-
-      const githubResult = await this.fetchGitHubIssueFactsForRepo(repoName, userId);
-      if (githubResult.authoritativeRepo) {
-        const authoritativeRepo = this.normalizeRepoName(githubResult.authoritativeRepo);
-        const localFactsOutsideLiveRepo = facts.filter((fact) => {
-          if (fact.source === "github_issue") {
-            return true;
-          }
-
-          const factRepo = this.normalizeRepoName(fact.repo);
-          return (
-            !factRepo ||
-            (factRepo !== authoritativeRepo &&
-              !authoritativeRepo.endsWith(`/${factRepo}`) &&
-              !factRepo.endsWith(`/${authoritativeRepo}`))
-          );
-        });
-
-        return this.summarizeTaskFacts(
-          [...localFactsOutsideLiveRepo, ...githubResult.facts],
-          [`github:${githubResult.authoritativeRepo}`],
-        );
-      }
-
-      facts.push(...githubResult.facts);
     }
 
     return this.summarizeTaskFacts(facts);
