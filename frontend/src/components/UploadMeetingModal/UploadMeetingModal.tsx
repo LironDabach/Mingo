@@ -84,6 +84,7 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
   const [attendees, setAttendees] = useState<AttendeeEntry[]>([]);
   const [availableUsers, setAvailableUsers] = useState<UserOption[]>([]);
   const [file, setFile] = useState<File | null>(null);
+  const [fileDurationSeconds, setFileDurationSeconds] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [usersLoadError, setUsersLoadError] = useState('');
   const [reposLoadError, setReposLoadError] = useState('');
@@ -148,7 +149,17 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
       return;
     }
     setFile(selected);
+    setFileDurationSeconds(null);
     setError('');
+
+    const url = URL.createObjectURL(selected);
+    const audio = new Audio(url);
+    audio.addEventListener('loadedmetadata', () => {
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        setFileDurationSeconds(Math.round(audio.duration));
+      }
+      URL.revokeObjectURL(url);
+    });
   };
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -174,6 +185,7 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
   const handleRemoveFile = (event: React.MouseEvent) => {
     event.stopPropagation();
     setFile(null);
+    setFileDurationSeconds(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -300,6 +312,7 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
       formData.append('title', title.trim());
       if (repository.trim()) formData.append('gitHubRepoName', repository.trim());
       if (attendeeEmails.length > 0) formData.append('attendeeEmails', attendeeEmails.join(','));
+      if (fileDurationSeconds !== null) formData.append('durationSeconds', String(fileDurationSeconds));
 
       const response = await fetchWithAuth('/api/transcript/mp3', {
         method: 'POST',

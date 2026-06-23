@@ -37,6 +37,7 @@ type Meeting = {
   participants: number;
   participantLabels: string[];
   duration: string;
+  recordingDuration?: string | undefined;
   status: 'Completed' | 'Upcoming' | 'Live';
   tasksCount: number;
   summary: string;
@@ -65,6 +66,14 @@ const formatDuration = (duration?: number) => {
   }
 
   return `${Math.max(1, Math.round(duration))} min`;
+};
+
+const formatRecordingDuration = (seconds: number) => {
+  const s = Math.round(seconds);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
 };
 
 const formatMeetingDate = (date: Date) =>
@@ -111,6 +120,8 @@ const normalizeMeeting = (meeting: RawMeeting): Meeting => {
     ...(Array.isArray(meeting.inviteEmails) ? meeting.inviteEmails : []),
   ].filter((label, index, array) => Boolean(label) && array.indexOf(label) === index);
 
+  const isTranscribed = Boolean(meeting.transcriptId && !meeting.mingoAgentId);
+
   return {
     id: meeting._id,
     title: meeting.title || 'Untitled Meeting',
@@ -120,11 +131,15 @@ const normalizeMeeting = (meeting: RawMeeting): Meeting => {
     participants: participantLabels.length,
     participantLabels,
     duration: formatDuration(meeting.duration),
+    recordingDuration:
+      isTranscribed && typeof meeting.duration === 'number'
+        ? formatRecordingDuration(meeting.duration)
+        : undefined,
     status: isLive ? 'Live' : isCompleted ? 'Completed' : 'Upcoming',
     tasksCount: Array.isArray(meeting.tasks) ? meeting.tasks.length : 0,
     summary: meeting.summary || '',
     repository: meeting.gitHubRepoName || '-',
-    isTranscribed: Boolean(meeting.transcriptId && !meeting.mingoAgentId),
+    isTranscribed,
   };
 };
 
@@ -138,7 +153,6 @@ const HistoryPage = () => {
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState('');
-  const [isCreatingDemo, setIsCreatingDemo] = useState(false);
   const [meetingTasks, setMeetingTasks] = useState<MeetingTask[]>([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
 
@@ -294,47 +308,6 @@ const HistoryPage = () => {
     }
   };
 
-  const createDemoMeeting = async () => {
-    if (!currentUser?._id || isCreatingDemo) {
-      return;
-    }
-
-    try {
-      setIsCreatingDemo(true);
-      setError('');
-
-      const summary =
-        'This demo meeting covered project planning, action items, and next steps. It exists only so the completed-meeting summary flow can be tested.';
-      const response = await fetchWithAuth('/api/meetings/meetings', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: 'Demo Completed Meeting',
-          gitHubRepoName: 'Mingo',
-          participants: [currentUser._id],
-          attendeeEmails: ['external.guest@example.com', 'product.guest@example.com'],
-          status: 'completed',
-          duration: 35,
-          summary,
-          topics: ['Project planning', 'Action items', 'Next steps'],
-          date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-          endedAt: new Date().toISOString(),
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Unable to create demo meeting right now.');
-      }
-
-      const createdMeeting = (await response.json()) as RawMeeting;
-      setMeetings((prev) => [normalizeMeeting(createdMeeting), ...prev]);
-      setActiveTab('All');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to create demo meeting right now.');
-    } finally {
-      setIsCreatingDemo(false);
-    }
-  };
-
   return (
     <div className="history-layout">
       <Header />
@@ -412,17 +385,7 @@ const HistoryPage = () => {
         <div className="history-card">
           <div className="history-card-header">
             <h2>Your Meetings</h2>
-            <div className="history-card-header__actions">
-              <button
-                type="button"
-                className="history-demo-button"
-                onClick={createDemoMeeting}
-                disabled={isCreatingDemo}
-              >
-                {isCreatingDemo ? 'Creating...' : 'Create demo meeting'}
-              </button>
-              <span className="history-count">{filtered.length} {filtered.length === 1 ? 'meeting' : 'meetings'}</span>
-            </div>
+            <span className="history-count">{filtered.length} {filtered.length === 1 ? 'meeting' : 'meetings'}</span>
           </div>
 
           {isLoading ? (
@@ -480,7 +443,7 @@ const HistoryPage = () => {
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
                           </svg>
-                          Transcribed
+                          Transcribed{meeting.recordingDuration ? ` · ${meeting.recordingDuration}` : ''}
                         </span>
                       ) : (
                         <span className="history-badge history-badge--completed">
@@ -515,7 +478,8 @@ const HistoryPage = () => {
                 <h2 className="history-modal-title">{selectedMeeting.title}</h2>
                 <div className="history-modal-meta">
                   <span>{selectedMeeting.dateLabel}, {selectedMeeting.timeLabel}</span>
-                  {selectedMeeting.duration !== '-' && <><span className="history-modal-sep">·</span><span>{selectedMeeting.duration}</span></>}
+                  {selectedMeeting.recordingDuration && <><span className="history-modal-sep">·</span><span>{selectedMeeting.recordingDuration}</span></>}
+                  {!selectedMeeting.recordingDuration && selectedMeeting.duration !== '-' && <><span className="history-modal-sep">·</span><span>{selectedMeeting.duration}</span></>}
                   {selectedMeeting.repository !== '-' && <><span className="history-modal-sep">·</span><span>{selectedMeeting.repository}</span></>}
                 </div>
               </div>

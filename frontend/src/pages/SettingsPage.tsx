@@ -42,7 +42,7 @@ type FieldErrors = {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_RE = /^[a-zA-Z0-9_-]{3,20}$/;
 
-const validateProfile = (fullname: string, username: string, email: string): FieldErrors => {
+const validateProfile = (fullname: string, username: string): FieldErrors => {
   const errors: FieldErrors = {};
 
   if (!fullname.trim()) {
@@ -55,12 +55,6 @@ const validateProfile = (fullname: string, username: string, email: string): Fie
     errors.username = 'Username is required.';
   } else if (!USERNAME_RE.test(username.trim())) {
     errors.username = '3–20 characters, letters, numbers, _ or - only.';
-  }
-
-  if (!email.trim()) {
-    errors.email = 'Email is required.';
-  } else if (!EMAIL_RE.test(email.trim())) {
-    errors.email = 'Enter a valid email address.';
   }
 
   return errors;
@@ -256,7 +250,7 @@ const SettingsPage = () => {
     if (!profile) return;
 
     setProfileSuccess('');
-    const errors = validateProfile(fullname, username, email);
+    const errors = validateProfile(fullname, username);
 
     if (Object.keys(errors).length > 0) {
       setProfileErrors(errors);
@@ -270,7 +264,6 @@ const SettingsPage = () => {
       const formData = new FormData();
       formData.append('fullname', fullname.trim());
       formData.append('username', username.trim());
-      formData.append('email', email.trim());
 
       const response = await fetchWithAuth(`/api/user/${profile._id}`, {
         method: 'PUT',
@@ -502,7 +495,7 @@ const SettingsPage = () => {
             <section className="settings-section">
               <div className="settings-section-header">
                 <p className="settings-section-title">Profile</p>
-                <p className="settings-section-desc">Update your display name, username, and email address.</p>
+                <p className="settings-section-desc">Update your display name and username.</p>
               </div>
               <form onSubmit={handleSaveProfile} noValidate>
                 <div className="settings-section-body">
@@ -553,22 +546,14 @@ const SettingsPage = () => {
                   </div>
 
                   <div className="settings-field">
-                    <label className="settings-field-label">
-                      Email <span className="required">*</span>
-                    </label>
+                    <label className="settings-field-label">Email</label>
                     <input
-                      className={`settings-field-input${profileErrors.email ? ' settings-field-input--error' : ''}`}
+                      className="settings-field-input settings-field-input--readonly"
                       type="email"
                       value={email}
-                      onChange={(e) => {
-                        setEmail(e.target.value);
-                        if (profileErrors.email) setProfileErrors((prev) => ({ ...prev, email: undefined }));
-                      }}
-                      placeholder="you@example.com"
+                      readOnly
                     />
-                    {profileErrors.email && (
-                      <span className="settings-field-error">{profileErrors.email}</span>
-                    )}
+                    <span className="settings-field-hint">Email address cannot be changed.</span>
                   </div>
                 </div>
 

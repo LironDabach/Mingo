@@ -26,12 +26,6 @@ type ChatMessage = {
   text: string;
 };
 
-type Topic = {
-  id: number;
-  title: string;
-  description: string;
-};
-
 type Task = {
   id: number;
   title: string;
@@ -41,62 +35,6 @@ type Task = {
   done: boolean;
   htmlUrl?: string;
 };
-
-const DEFAULT_TOPICS: Topic[] = [
-  {
-    id: 1,
-    title: 'Project description and functionality',
-    description: 'Define the main flow, product boundaries, and meeting goals.',
-  },
-  {
-    id: 2,
-    title: 'Design and product direction',
-    description: 'Review the next UI iteration and align on experience details.',
-  },
-  {
-    id: 3,
-    title: 'Engineering follow-ups',
-    description: 'Track the technical actions that came out of this discussion.',
-  },
-];
-
-const DEFAULT_TASKS: Task[] = [
-  {
-    id: 1,
-    title: 'Project description',
-    assignee: 'Planning owner',
-    due: 'Due to 30.12.25',
-    tag: 'MINGO-12',
-    done: true,
-  },
-  {
-    id: 2,
-    title: 'Figma Design',
-    assignee: 'Planning owner',
-    due: 'Due to 30.12.25',
-    tag: 'MINGO-41',
-    done: false,
-  },
-  {
-    id: 3,
-    title: 'Architecture',
-    assignee: 'Planning owner',
-    due: 'Due to 30.12.25',
-    tag: 'MINGO-32',
-    done: false,
-  },
-];
-
-const INITIAL_MESSAGES: ChatMessage[] = [
-  { id: 1, sender: 'user', text: "What's the last task given in this meeting?" },
-  {
-    id: 2,
-    sender: 'mingo',
-    text: 'The Figma Design task is assigned and still open. Pay attention that it is due by 30.12.25.',
-  },
-  { id: 3, sender: 'user', text: 'Thank you Mingo!' },
-  { id: 4, sender: 'mingo', text: 'Always here to manage your meetings smarter!' },
-];
 
 const formatMeetingDate = (value?: string) => {
   const date = value ? new Date(value) : new Date();
@@ -145,12 +83,12 @@ const MeetingPage = () => {
     );
   }, [parsedDraft?.attendees, storedUser?.email, storedUser?.fullname]);
 
-  const meetingTitle = parsedDraft?.title || 'Planning Mingo Project';
-  const repositoryLabel = parsedDraft?.gitHubRepoName || 'Mingo';
+  const meetingTitle = parsedDraft?.title || 'Live Meeting';
+  const repositoryLabel = parsedDraft?.gitHubRepoName || '';
   const meetingDate = formatMeetingDate(parsedDraft?.date);
-  const meetingDuration = '43 min';
+  const [actualDuration, setActualDuration] = useState('');
 
-  const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   useEffect(() => {
     const loadChatHistory = async () => {
@@ -180,7 +118,7 @@ const MeetingPage = () => {
             text: msg.content,
           }));
 
-          setMessages([...INITIAL_MESSAGES, ...backendMessages]);
+          setMessages(backendMessages);
         }
       } catch (error) {
         console.error('Failed to load chat history:', error);
@@ -201,6 +139,32 @@ const MeetingPage = () => {
   const [emailSending, setEmailSending] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [topics, setTopics] = useState<string[]>([]);
+
+  useEffect(() => {
+    const loadMeetingTopics = async () => {
+      const meetingId =
+        meetingIdRef.current ||
+        parsedDraft?.id ||
+        localStorage.getItem('currentMeetingId') ||
+        '';
+
+      if (!meetingId) return;
+
+      try {
+        const response = await fetchWithAuth(`/api/meetings/meetings/${meetingId}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        if (Array.isArray(data.topics) && data.topics.length > 0) {
+          setTopics(data.topics);
+        }
+      } catch {
+        // topics are optional — don't block the page
+      }
+    };
+
+    loadMeetingTopics();
+  }, []);
 
   useEffect(() => {
     const loadTasks = async () => {
@@ -365,6 +329,7 @@ const MeetingPage = () => {
 
       const startedAt = parsedDraft?.date ? new Date(parsedDraft.date).getTime() : Date.now();
       const duration = Math.max(1, Math.round((Date.now() - startedAt) / 60000));
+      setActualDuration(`${duration} min`);
 
       await fetchWithAuth(`/api/meetings/meetings/${meetingId}`, {
         method: 'PUT',
@@ -372,7 +337,7 @@ const MeetingPage = () => {
           status: 'completed',
           duration,
           summary: generatedSummary,
-          topics: DEFAULT_TOPICS.map((topic) => topic.title),
+          topics,
           endedAt: new Date().toISOString(),
         }),
       });
@@ -410,7 +375,7 @@ const MeetingPage = () => {
         method: 'POST',
         body: JSON.stringify({
           summary: summaryText || summaryNarrative,
-          topics: DEFAULT_TOPICS.map((topic) => `${topic.title}: ${topic.description}`),
+          topics,
           closedTasks: completedTasks.map((task) => `${task.title} (${task.assignee}, ${task.tag})`),
           openTasks: openTasks.map((task) => `${task.title} (${task.assignee}, ${task.due})`),
         }),
@@ -483,7 +448,7 @@ const MeetingPage = () => {
                   <circle cx="12" cy="12" r="10" />
                   <polyline points="12 6 12 12 16 14" />
                 </svg>
-                43 min
+                Live
               </span>
               <span className="meeting-hero__divider" />
               <span>
@@ -578,26 +543,23 @@ const MeetingPage = () => {
               </header>
 
               <div className="meeting-topics">
-                {DEFAULT_TOPICS.map((topic) => (
-                  <div key={topic.id} className="meeting-topic">
+                {topics.length > 0 ? topics.map((topic, index) => (
+                  <div key={index} className="meeting-topic">
                     <div className="meeting-topic__icon">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 2v4" />
-                        <path d="M12 18v4" />
-                        <path d="m4.93 4.93 2.83 2.83" />
-                        <path d="m16.24 16.24 2.83 2.83" />
-                        <path d="M2 12h4" />
-                        <path d="M18 12h4" />
-                        <path d="m4.93 19.07 2.83-2.83" />
-                        <path d="m16.24 7.76 2.83-2.83" />
+                        <path d="M12 2v4" /><path d="M12 18v4" />
+                        <path d="m4.93 4.93 2.83 2.83" /><path d="m16.24 16.24 2.83 2.83" />
+                        <path d="M2 12h4" /><path d="M18 12h4" />
+                        <path d="m4.93 19.07 2.83-2.83" /><path d="m16.24 7.76 2.83-2.83" />
                       </svg>
                     </div>
                     <div className="meeting-topic__content">
-                      <strong>{topic.title}</strong>
-                      <span>{topic.description}</span>
+                      <strong>{topic}</strong>
                     </div>
                   </div>
-                ))}
+                )) : (
+                  <p className="meeting-tasks-empty">No topics recorded yet.</p>
+                )}
               </div>
             </article>
 
@@ -680,10 +642,12 @@ const MeetingPage = () => {
                 <strong>Date</strong>
                 <span>{meetingDate}</span>
               </article>
-              <article className="meeting-summary__fact">
-                <strong>Duration</strong>
-                <span>{meetingDuration}</span>
-              </article>
+              {actualDuration && (
+                <article className="meeting-summary__fact">
+                  <strong>Duration</strong>
+                  <span>{actualDuration}</span>
+                </article>
+              )}
               <article className="meeting-summary__fact">
                 <strong>Repository</strong>
                 <span>{repositoryLabel}</span>
