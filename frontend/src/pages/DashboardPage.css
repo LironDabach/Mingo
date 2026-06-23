@@ -578,7 +578,6 @@
   flex-shrink: 0;
 }
 
-.recent-dot--topics { background: var(--primary); }
 .recent-dot--tasks  { background: var(--violet); }
 
 /* ── Responsive ─────────────────────────────────────────────── */

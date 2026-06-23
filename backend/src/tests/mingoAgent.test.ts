@@ -20,7 +20,6 @@ let createdMeetingId: string;
 let createdChatId: string;
 let createdReplyMeetingId: string;
 let createdSummaryMeetingId: string;
-let createdTopicsMeetingId: string;
 let llmUser: string;
 let llmPass: string;
 let jwtSecret: string;
@@ -58,7 +57,7 @@ beforeAll(async () => {
   await tasksModel.deleteMany({
     gitHubIssueId: {
       $gte: suiteIssueSeed + 930001,
-      $lte: suiteIssueSeed + 930007,
+      $lte: suiteIssueSeed + 930005,
     },
   });
 
@@ -67,8 +66,6 @@ beforeAll(async () => {
   const replyTimelineTaskId = await createTask(930003, "confirm-timeline");
   const summaryBudgetTaskId = await createTask(930004, "review-budget");
   const summaryUpdatesTaskId = await createTask(930005, "share-updates");
-  const topicsRoadmapTaskId = await createTask(930006, "align-roadmap");
-  const topicsOwnersTaskId = await createTask(930007, "track-owners");
 
   const createdMeeting = (await meetingsModel.create({
     title: "Budget sync",
@@ -77,7 +74,6 @@ beforeAll(async () => {
     organizerId: userId,
     participants: [userId, otherUserId],
     transcriptId: new mongoose.Types.ObjectId(),
-    topics: ["Send budget by Friday"],
     tasks: [budgetTaskId],
   })) as any;
   createdMeetingId = createdMeeting._id.toString();
@@ -106,7 +102,6 @@ beforeAll(async () => {
     organizerId: userId,
     participants: [userId],
     transcriptId: new mongoose.Types.ObjectId(),
-    topics: ["Send budget by Friday", "Confirm timeline"],
     tasks: [replyBudgetTaskId, replyTimelineTaskId],
   })) as any;
   createdReplyMeetingId = createdReplyMeeting._id.toString();
@@ -118,22 +113,9 @@ beforeAll(async () => {
     organizerId: userId,
     participants: [userId, otherUserId],
     transcriptId: new mongoose.Types.ObjectId(),
-    topics: ["Review budget", "Share updates"],
     tasks: [summaryBudgetTaskId, summaryUpdatesTaskId],
   })) as any;
   createdSummaryMeetingId = createdSummaryMeeting._id.toString();
-
-  const createdTopicsMeeting = (await meetingsModel.create({
-    title: "Roadmap alignment",
-    date: new Date("2026-03-20T12:00:00.000Z"),
-    duration: 50,
-    organizerId: userId,
-    participants: [userId, otherUserId],
-    transcriptId: new mongoose.Types.ObjectId(),
-    topics: ["Align roadmap", "Track owners"],
-    tasks: [topicsRoadmapTaskId, topicsOwnersTaskId],
-  })) as any;
-  createdTopicsMeetingId = createdTopicsMeeting._id.toString();
 
   authToken = jwt.sign({ _id: userId }, jwtSecret, { expiresIn: "1h" });
   otherAuthToken = jwt.sign({ _id: otherUserId }, jwtSecret, {
@@ -146,7 +128,6 @@ afterAll(async () => {
     createdMeetingId,
     createdReplyMeetingId,
     createdSummaryMeetingId,
-    createdTopicsMeetingId,
   ].filter(Boolean);
 
   if (createdChatId) {
@@ -255,37 +236,4 @@ describe("Mingo Agent API", () => {
     expect(response.body.summary.toLowerCase()).toContain("review budget");
   });
 
-  // ── GET /api/meetings/:meetingId/mingoAgent/generateTopics ──
-
-  test("generate topics requires authentication", async () => {
-    const response = await request(app).get(
-      `/api/meetings/${createdTopicsMeetingId}/mingoAgent/generateTopics`,
-    );
-
-    expect(response.status).toBe(401);
-  });
-
-  test("gets generated topics for a meeting", async () => {
-    const response = await request(app)
-      .get(`/api/meetings/${createdTopicsMeetingId}/mingoAgent/generateTopics`)
-      .set("Authorization", `Bearer ${authToken}`);
-
-    expect(response.status).toBe(200);
-    expect(Array.isArray(response.body.topics)).toBe(true);
-    expect(response.body.topics.length).toBeGreaterThan(0);
-    response.body.topics.forEach((topic: unknown) => {
-      expect(topic).toHaveProperty("title");
-      expect(topic).toHaveProperty("description");
-      expect(typeof (topic as { title: string }).title).toBe("string");
-      expect(typeof (topic as { description: string }).description).toBe(
-        "string",
-      );
-      expect((topic as { title: string }).title.trim().length).toBeGreaterThan(
-        0,
-      );
-      expect(
-        (topic as { description: string }).description.trim().length,
-      ).toBeGreaterThan(0);
-    });
-  });
 });

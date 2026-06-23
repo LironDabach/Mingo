@@ -63,7 +63,6 @@ beforeAll(async () => {
       organizerId: userId,
       participants: [userId, otherUserId],
       transcriptId: new mongoose.Types.ObjectId(),
-      topics: [],
       tasks: [taskOneId, taskTwoId],
     },
     {
@@ -73,7 +72,6 @@ beforeAll(async () => {
       organizerId: otherUserId,
       participants: [otherUserId],
       transcriptId: new mongoose.Types.ObjectId(),
-      topics: [],
       tasks: [],
     },
   ]);
@@ -158,7 +156,6 @@ describe("Tasks API", () => {
         organizerId: userId,
         participants: [userId],
         transcriptId: new mongoose.Types.ObjectId(),
-        topics: [],
         tasks: [orphanTaskId],
       });
 
@@ -296,7 +293,6 @@ describe("Tasks API", () => {
         organizerId: userId,
         participants: [userId],
         transcriptId: new mongoose.Types.ObjectId(),
-        topics: [],
         tasks: [orphanTaskId],
       });
 
@@ -356,7 +352,6 @@ describe("Tasks API", () => {
         organizerId: userId,
         participants: [userId],
         transcriptId: new mongoose.Types.ObjectId(),
-        topics: [],
         tasks: [orphanTaskId],
       });
 

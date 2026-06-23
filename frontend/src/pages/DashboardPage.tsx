@@ -13,11 +13,7 @@ type DashboardMeeting = {
   scheduledAt: string;
   date: string;
   duration: string;
-  insightCount: number;
-  bullets: string;
-  color: string;
   repoTag: string;
-  topicsCount: number;
   tasksCount: number;
   gitHubRepoName?: string;
   participants: number;
@@ -45,7 +41,6 @@ type RawMeeting = {
   gitHubRepoName?: string;
   participants?: RawParticipant[];
   inviteEmails?: string[];
-  topics?: string[];
   tasks?: string[];
 };
 
@@ -103,14 +98,6 @@ const formatDashboardMeetingDate = (value: string) => {
   }).format(date);
 };
 
-const REPOSITORY_COLORS = ['#1d4ed8', '#2563eb', '#3b82f6', '#60a5fa', '#0284c7', '#0ea5e9'];
-
-const getRepositoryColor = (value?: string): string => {
-  const seed = value?.trim() || 'manual';
-  const hash = seed.split('').reduce((total, char) => total + char.charCodeAt(0), 0);
-  return REPOSITORY_COLORS[hash % REPOSITORY_COLORS.length] ?? '#1d4ed8';
-};
-
 const formatRepositoryTag = (value?: string) => {
   if (!value?.trim()) {
     return 'Manual';
@@ -156,11 +143,7 @@ const normalizeDashboardMeeting = (meeting: RawMeeting, index = 0): DashboardMee
     scheduledAt: meeting.date,
     date: formatDashboardMeetingDate(meeting.date),
     duration: formatMeetingDuration(meeting.duration),
-    insightCount: (meeting.topics?.length || 0) + (meeting.tasks?.length || 0),
-    bullets: formatRepositoryTag(meeting.gitHubRepoName),
-    color: getRepositoryColor(meeting.gitHubRepoName || meeting.title || String(index)),
     repoTag: formatRepositoryTag(meeting.gitHubRepoName),
-    topicsCount: meeting.topics?.length || 0,
     tasksCount: meeting.tasks?.length || 0,
     ...(meeting.gitHubRepoName !== undefined ? { gitHubRepoName: meeting.gitHubRepoName } : {}),
     participants: attendees.length,
@@ -779,10 +762,6 @@ const DashboardPage = () => {
                   </span>
                 </div>
                 <div className="recent-stats">
-                  <span>
-                    <b className="recent-dot recent-dot--topics" />
-                    {m.topicsCount} topics
-                  </span>
                   <span>
                     <b className="recent-dot recent-dot--tasks" />
                     {m.tasksCount} tasks

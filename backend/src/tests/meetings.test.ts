@@ -72,7 +72,6 @@ beforeAll(async () => {
       organizerId: userId,
       participants: [userId, otherUserId],
       transcriptId: new mongoose.Types.ObjectId(),
-      topics: [],
       tasks: [planningTaskId],
     },
     {
@@ -82,7 +81,6 @@ beforeAll(async () => {
       organizerId: otherUserId,
       participants: [otherUserId],
       transcriptId: new mongoose.Types.ObjectId(),
-      topics: [],
       tasks: [retrospectiveTaskId],
     },
     {
@@ -92,7 +90,6 @@ beforeAll(async () => {
       organizerId: otherUserId,
       participants: [userId, otherUserId],
       transcriptId: new mongoose.Types.ObjectId(),
-      topics: [],
       tasks: [upcomingTaskId],
     },
     {
@@ -102,7 +99,6 @@ beforeAll(async () => {
       organizerId: userId,
       participants: [userId],
       transcriptId: new mongoose.Types.ObjectId(),
-      topics: [],
       tasks: [quarterlyTaskId],
     },
     {
@@ -111,7 +107,6 @@ beforeAll(async () => {
       organizerId: userId,
       participants: [userId],
       transcriptId: new mongoose.Types.ObjectId(),
-      topics: [],
       tasks: [noDurationTaskId],
     },
   ]);
@@ -318,7 +313,6 @@ describe("Meetings API", () => {
         organizerId: userId,
         participants: [userId],
         transcriptId: new mongoose.Types.ObjectId().toString(),
-        topics: [],
         tasks: [new mongoose.Types.ObjectId().toString()],
       });
 
@@ -336,7 +330,6 @@ describe("Meetings API", () => {
           organizerId: userId,
           participants: [userId, otherUserId],
           transcriptId: new mongoose.Types.ObjectId().toString(),
-          topics: [],
           tasks: [new mongoose.Types.ObjectId().toString()],
         });
 
@@ -413,7 +406,6 @@ describe("Meetings API", () => {
         organizerId: userId,
         participants: [userId],
         transcriptId: new mongoose.Types.ObjectId(),
-        topics: [],
         tasks: [new mongoose.Types.ObjectId()],
       });
 

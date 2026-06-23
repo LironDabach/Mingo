@@ -28,11 +28,6 @@ type AgentReply = {
   messages: ChatMessage[];
 };
 
-type TopicItem = {
-  title: string;
-  description: string;
-};
-
 type RetrievalScope =
   | "current_meeting"
   | "related_meetings"
@@ -188,162 +183,6 @@ class MingoAgentService {
     }
 
     return String(value);
-  }
-
-  private normalizeTopicItem(value: unknown): TopicItem | null {
-    if (typeof value === "string") {
-      const title = value.trim();
-      if (!title) {
-        return null;
-      }
-
-      return {
-        title,
-        description: `Discussion related to ${title.toLowerCase()}.`,
-      };
-    }
-
-    if (value && typeof value === "object") {
-      const record = value as {
-        title?: unknown;
-        description?: unknown;
-        subject?: unknown;
-      };
-      const rawTitle =
-        typeof record.title === "string"
-          ? record.title
-          : typeof record.subject === "string"
-            ? record.subject
-            : "";
-      const rawDescription =
-        typeof record.description === "string" ? record.description : "";
-      const title = rawTitle.trim();
-      const description = rawDescription.trim();
-
-      if (!title) {
-        return null;
-      }
-
-      return {
-        title,
-        description:
-          description || `Discussion related to ${title.toLowerCase()}.`,
-      };
-    }
-
-    return null;
-  }
-
-  private parseTopicsResponse(topicsResponse: string): TopicItem[] {
-    const normalizeTopics = (value: unknown): TopicItem[] | null => {
-      if (!Array.isArray(value)) {
-        return null;
-      }
-
-      const topics = value
-        .map((item) => this.normalizeTopicItem(item))
-        .filter(Boolean);
-
-      return topics.length ? (topics as TopicItem[]) : null;
-    };
-
-    const tryParseJson = (raw: string): TopicItem[] | null => {
-      const parsed = JSON.parse(raw) as unknown;
-
-      const directTopics = normalizeTopics(parsed);
-      if (directTopics) {
-        return directTopics;
-      }
-
-      if (parsed && typeof parsed === "object") {
-        const objectTopics = normalizeTopics(
-          (parsed as { topics?: unknown }).topics,
-        );
-        if (objectTopics) {
-          return objectTopics;
-        }
-      }
-
-      return null;
-    };
-
-    try {
-      const parsedTopics = tryParseJson(topicsResponse);
-      if (parsedTopics) {
-        return parsedTopics;
-      }
-    } catch {
-      // Fall through to substring extraction below.
-    }
-
-    const jsonArrayMatch = topicsResponse.match(/\[[\s\S]*\]/);
-    if (jsonArrayMatch) {
-      try {
-        const parsedTopics = tryParseJson(jsonArrayMatch[0]);
-        if (parsedTopics) {
-          return parsedTopics;
-        }
-      } catch {
-        // Fall through to bullet parsing below.
-      }
-    }
-
-    const bulletTopics = topicsResponse
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => /^[-*•]\s+/.test(line))
-      .map((line) =>
-        this.normalizeTopicItem(line.replace(/^[-*•]\s+/, "").trim()),
-      )
-      .filter(Boolean);
-
-    if (bulletTopics.length) {
-      return bulletTopics as TopicItem[];
-    }
-
-    throw new Error("Parsed topics is not a supported topics array");
-  }
-
-  private buildFallbackTopics(meeting: any): TopicItem[] {
-    const normalizedTopics = Array.isArray(meeting?.topics)
-      ? meeting.topics
-          .map((topic: unknown) => this.normalizeTopicItem(topic))
-          .filter(Boolean)
-      : [];
-
-    if (normalizedTopics.length) {
-      return normalizedTopics as TopicItem[];
-    }
-
-    const taskTopics = this.extractTaskLabels(meeting?.tasks)
-      .map((task) => ({
-        title: task.trim(),
-        description: `Action item discussed in the meeting: ${task.trim()}.`,
-      }))
-      .filter((topic: TopicItem) => Boolean(topic.title))
-      .slice(0, 5);
-
-    if (taskTopics.length) {
-      return taskTopics;
-    }
-
-    const title =
-      typeof meeting?.title === "string" ? meeting.title.trim() : "";
-    if (title) {
-      return [
-        {
-          title,
-          description: `Main discussion topic based on the meeting title: ${title}.`,
-        },
-      ];
-    }
-
-    return [
-      {
-        title: "General meeting discussion",
-        description: "General discussion derived from the meeting context.",
-      },
-    ];
   }
 
   private serializeHistory(messages: ChatMessage[]) {
@@ -927,25 +766,14 @@ class MingoAgentService {
       .filter(Boolean);
   }
 
-  private extractTopicLabels(topics: unknown) {
-    if (!Array.isArray(topics)) {
-      return [] as string[];
-    }
-
-    return topics
-      .map((topic) => this.normalizeTopicItem(topic)?.title || "")
-      .filter(Boolean);
-  }
-
   private buildFallbackReply(
     meeting: any,
     userMessage: string,
     relatedMeetings: any[],
   ) {
     const normalizedMessage = userMessage.toLowerCase();
-    const topics = this.extractTopicLabels(meeting?.topics);
     const tasks = this.extractTaskLabels(meeting?.tasks);
-    const actionItems = [...topics, ...tasks].filter(
+    const actionItems = tasks.filter(
       (value, index, array) => array.indexOf(value) === index,
     );
     const meetingTitle =
@@ -992,9 +820,8 @@ class MingoAgentService {
       typeof meeting?.title === "string" && meeting.title.trim()
         ? meeting.title.trim()
         : "This meeting";
-    const topics = this.extractTopicLabels(meeting?.topics);
     const tasks = this.extractTaskLabels(meeting?.tasks);
-    const discussionPoints = [...topics, ...tasks].filter(
+    const discussionPoints = tasks.filter(
       (value, index, array) => array.indexOf(value) === index,
     );
 
@@ -1027,7 +854,6 @@ class MingoAgentService {
       `- Organizer ID: ${this.summarizeContextValue(meeting?.organizerId)}`,
       `- Participants: ${this.summarizeContextValue(meeting?.participants)}`,
       `- Transcript ID: ${this.summarizeContextValue(meeting?.transcriptId)}`,
-      `- Topics: ${this.summarizeContextValue(meeting?.topics)}`,
       `- Tasks: ${this.summarizeContextValue(meeting?.tasks)}`,
     ].join("\n");
   }
@@ -1036,13 +862,6 @@ class MingoAgentService {
     const parts = [
       meeting?.title,
       ...this.extractTaskLabels(meeting?.tasks),
-      ...(Array.isArray(meeting?.topics)
-        ? meeting.topics.map((topic: unknown) =>
-            typeof topic === "string"
-              ? topic
-              : this.normalizeTopicItem(topic)?.title || "",
-          )
-        : []),
     ];
 
     return parts
@@ -1111,7 +930,7 @@ class MingoAgentService {
             : "any",
       requestedEntities: this.normalizePlanKeywords(
         normalized.match(
-          /\b(tasks?|action items?|decisions?|blockers?|participants?|topics?|summary|timeline|risks?)\b/g,
+          /\b(tasks?|action items?|decisions?|blockers?|participants?|summary|timeline|risks?)\b/g,
         ) || [],
       ),
       keywords: this.tokenizeForSearch(userMessage).slice(
@@ -1204,7 +1023,7 @@ class MingoAgentService {
       "Choose related_meetings when the user refers to previous, similar, follow-up, or comparative meeting context.",
       "Choose all_user_meetings only when the request clearly needs a broad search across the user's meetings.",
       "Keywords should be short search phrases taken from the user's request and current meeting context.",
-      "requestedEntities should include the business entities being asked for, such as tasks, blockers, decisions, participants, risks, or topics.",
+      "requestedEntities should include the business entities being asked for, such as tasks, blockers, decisions, participants, risks, or timeline.",
       "Set a small limit between 1 and 6 when other meetings are needed.",
       "",
       this.formatMeetingSummary(meeting, "Current meeting"),
@@ -1656,7 +1475,7 @@ class MingoAgentService {
 
     const summaryPrompt = [
       "You are Mingo, an AI assistant for meeting management.",
-      "Generate a concise summary of the key points, decisions, action items, and topics from the meeting based on the following context.",
+      "Generate a concise summary of the key points, decisions, and action items from the meeting based on the following context.",
       "Use only the provided meeting data as facts. Do not invent details that are not present in the context.",
       "",
       "Meeting context summary:",
@@ -1672,7 +1491,6 @@ class MingoAgentService {
       `Organizer ID: ${this.summarizeContextValue(meeting?.organizerId)}`,
       `Participants: ${this.summarizeContextValue(meeting?.participants)}`,
       `Transcript ID: ${this.summarizeContextValue(meeting?.transcriptId)}`,
-      `Topics: ${this.summarizeContextValue(meeting?.topics)}`,
       `Tasks: ${this.summarizeContextValue(meeting?.tasks)}`,
       "",
       "Meeting context JSON:",
@@ -1705,89 +1523,6 @@ class MingoAgentService {
     }
 
     return { summary };
-  }
-
-  async generateTopics(meetingId: string): Promise<{ topics: TopicItem[] }> {
-    if (!meetingId) {
-      throw new MingoAgentError("Meeting ID is required", 400);
-    }
-
-    const meeting = await this.getMeetingOrThrow(meetingId);
-
-    const topicsPrompt = [
-      "You are Mingo, an AI assistant for meeting management.",
-      "Based on the following meeting context, generate a list of concise topics that were discussed in the meeting.",
-      "Use only the provided meeting data as facts. Do not invent details that are not present in the context.",
-      "",
-      "Meeting context summary:",
-      `Title: ${this.summarizeContextValue(meeting?.title)}`,
-      `Date: ${
-        meeting?.date instanceof Date
-          ? meeting.date.toISOString()
-          : meeting?.date
-            ? new Date(meeting.date).toISOString()
-            : "Not available"
-      }`,
-      `Duration: ${this.summarizeContextValue(meeting?.duration)}`,
-      `Organizer ID: ${this.summarizeContextValue(meeting?.organizerId)}`,
-      `Participants: ${this.summarizeContextValue(meeting?.participants)}`,
-      `Transcript ID: ${this.summarizeContextValue(meeting?.transcriptId)}`,
-      `Topics: ${this.summarizeContextValue(meeting?.topics)}`,
-      `Tasks: ${this.summarizeContextValue(meeting?.tasks)}`,
-      "",
-      "Meeting context JSON:",
-      this.formatContextAsJson(meeting),
-      "",
-      'Topics as Mingo (return as JSON array of objects like [{"title":"...","description":"..."}]):',
-    ].join("\n");
-
-    let topicsResponse = "";
-    try {
-      try {
-        const response = await this.runLlmGenerate({
-          prompt: topicsPrompt,
-          format: "json",
-          options: {
-            temperature: 0.2,
-            top_p: 0.9,
-            num_predict: 400,
-          },
-        });
-
-        topicsResponse = this.normalizeAssistantResponse(response.response);
-      } catch {
-        const response = await this.runLlmGenerate({
-          prompt: topicsPrompt,
-          options: {
-            temperature: 0.2,
-            top_p: 0.9,
-            num_predict: 400,
-          },
-        });
-
-        topicsResponse = this.normalizeAssistantResponse(response.response);
-      }
-    } catch (error) {
-      if (error instanceof MingoAgentError) {
-        throw error;
-      }
-      return { topics: this.buildFallbackTopics(meeting) };
-    }
-
-    if (!topicsResponse) {
-      throw new MingoAgentError(
-        "The LLM returned an empty topics response",
-        502,
-      );
-    }
-
-    try {
-      const topics = this.parseTopicsResponse(topicsResponse);
-      return { topics };
-    } catch (error) {
-      return { topics: this.buildFallbackTopics(meeting) };
-    }
-
   }
 
   async generateTaskSuggestions(

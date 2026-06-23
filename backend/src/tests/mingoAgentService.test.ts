@@ -13,7 +13,6 @@ type MockMeeting = {
   participants: string[];
   transcriptId: string;
   gitHubRepoName?: string;
-  topics: string[];
   tasks: any[];
   mingoAgentId?: string;
   save?: jest.Mock<Promise<void>, []>;
@@ -27,7 +26,6 @@ const createMeeting = (overrides: Partial<MockMeeting> = {}): MockMeeting => ({
   organizerId: new mongoose.Types.ObjectId().toString(),
   participants: [],
   transcriptId: new mongoose.Types.ObjectId().toString(),
-  topics: [],
   tasks: [],
   save: jest.fn().mockResolvedValue(undefined),
   ...overrides,
@@ -75,7 +73,6 @@ const createMeetingsModelMock = (meetings: MockMeeting[]) => ({
           ...meeting,
           participants: [...meeting.participants],
           tasks: [...meeting.tasks],
-          topics: [...meeting.topics],
         })),
       ),
     };

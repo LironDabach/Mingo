@@ -157,7 +157,6 @@ class meetingsController extends baseController {
     date?: Date;
     duration?: number;
     participantNames?: string[];
-    topics?: string[];
     closedTasks?: string[];
     openTasks?: string[];
   }) {
@@ -170,7 +169,6 @@ class meetingsController extends baseController {
       date,
       duration,
       participantNames = [],
-      topics = [],
       closedTasks = [],
       openTasks = [],
     } = params;
@@ -222,8 +220,6 @@ class meetingsController extends baseController {
       "",
       "✨ Summary:",
       summary,
-      "",
-      formatSection("💬 Topics:", topics),
       "",
       formatSection("✅ Closed tasks:", closedTasks),
       "",
@@ -479,9 +475,6 @@ class meetingsController extends baseController {
         typeof req.body.summary === "string" && req.body.summary.trim()
           ? req.body.summary.trim()
           : meeting.summary;
-      const topics = Array.isArray(req.body.topics)
-        ? req.body.topics.filter((value: unknown): value is string => typeof value === "string" && Boolean(value.trim()))
-        : [];
       const closedTasks = Array.isArray(req.body.closedTasks)
         ? req.body.closedTasks.filter((value: unknown): value is string => typeof value === "string" && Boolean(value.trim()))
         : [];
@@ -525,7 +518,6 @@ class meetingsController extends baseController {
           ...participantNames,
           ...inviteEmails,
         ].filter((value, index, array) => array.indexOf(value) === index),
-        topics,
         closedTasks,
         openTasks,
       });
@@ -656,7 +648,6 @@ class meetingsController extends baseController {
             : undefined,
         googleCalendarEventId: calendarEventId,
         inviteEmails,
-        topics: Array.isArray(req.body.topics) ? req.body.topics : [],
         tasks: Array.isArray(req.body.tasks) ? req.body.tasks : [],
       };
 
