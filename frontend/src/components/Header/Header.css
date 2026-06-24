@@ -14,27 +14,14 @@
 
 .header-logo {
   display: flex;
-  align-items: baseline;
-  gap: 4px;
+  align-items: center;
   text-decoration: none;
 }
 
-.header-logo-text {
-  font-size: 22px;
-  font-weight: 800;
-  color: #0f172a;
-  letter-spacing: -0.5px;
-}
-
-.header-logo-text span {
-  color: #4f46e5;
-}
-
-.header-logo-sub {
-  font-size: 11px;
-  color: #94a3b8;
-  margin-left: 6px;
-  font-weight: 500;
+.header-logo-img {
+  height: 36px;
+  width: auto;
+  display: block;
 }
 
 .header-nav {

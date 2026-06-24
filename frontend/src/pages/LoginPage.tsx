@@ -222,7 +222,7 @@ const LoginPage = () => {
     <div className="auth-container">
       <div className="auth-brand">
         <div className="auth-brand-shell">
-          <div className="auth-brand-logo">Mingo</div>
+          <img src="/logo.svg" alt="Mingo" className="auth-brand-logo-img" />
           <div className="auth-brand-tagline">Manage your meetings smarter</div>
         </div>
       </div>

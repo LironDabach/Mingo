@@ -20,17 +20,19 @@
   text-align: center;
 }
 
-.auth-brand-logo {
-  font-size: clamp(84px, 11vw, 112px);
-  font-weight: 800;
-  letter-spacing: -6px;
-  line-height: 1;
+.auth-brand-logo-img {
+  width: 100%;
+  max-width: 980px;
+  height: auto;
+  display: block;
+  margin: 0 auto;
 }
 
 .auth-brand-tagline {
+  font-family: Comfortaa;
   margin-top: 24px;
-  font-size: 17px;
-  font-weight: 400;
+  font-size: 22px;
+  font-weight: 100;
   letter-spacing: 0.01em;
   opacity: 0.88;
   line-height: 1.5;
@@ -245,8 +247,9 @@
     border-radius: 16px;
   }
 
-  .auth-brand-logo {
-    font-size: 76px;
+  .auth-brand-logo-img {
+    width: 60%;
+    max-width: 280px;
   }
 
   .auth-form-wrapper h1 {
