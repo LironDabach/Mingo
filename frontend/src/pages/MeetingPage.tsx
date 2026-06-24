@@ -20,6 +20,13 @@ type MeetingDraft = {
   attendees?: DraftAttendee[];
 };
 
+type MeetingDetails = {
+  _id: string;
+  title?: string;
+  date?: string;
+  gitHubRepoName?: string;
+};
+
 type ChatMessage = {
   id: number;
   sender: 'user' | 'mingo';
@@ -93,12 +100,40 @@ const MeetingPage = () => {
     );
   }, [parsedDraft?.attendees, storedUser?.email, storedUser?.fullname]);
 
-  const meetingTitle = parsedDraft?.title || 'Live Meeting';
-  const repositoryLabel = parsedDraft?.gitHubRepoName || '';
-  const meetingDate = formatMeetingDate(parsedDraft?.date);
   const [actualDuration, setActualDuration] = useState('');
+  const [meetingDetails, setMeetingDetails] = useState<MeetingDetails | null>(null);
+  const meetingTitle = meetingDetails?.title || parsedDraft?.title || 'Live Meeting';
+  const repositoryLabel = meetingDetails?.gitHubRepoName || parsedDraft?.gitHubRepoName || '';
+  const meetingDate = formatMeetingDate(meetingDetails?.date || parsedDraft?.date);
 
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MINGO_MESSAGE]);
+
+  useEffect(() => {
+    const loadMeetingDetails = async () => {
+      const meetingId =
+        meetingIdRef.current ||
+        parsedDraft?.id ||
+        localStorage.getItem('currentMeetingId') ||
+        localStorage.getItem('lastSummaryMeetingId') ||
+        '';
+
+      if (!meetingId) return;
+
+      try {
+        const response = await fetchWithAuth(`/api/meetings/meetings/${meetingId}`);
+        if (!response.ok) return;
+
+        const data = (await response.json()) as MeetingDetails | MeetingDetails[];
+        if (!Array.isArray(data)) {
+          setMeetingDetails(data);
+        }
+      } catch (error) {
+        console.error('Failed to load meeting details:', error);
+      }
+    };
+
+    void loadMeetingDetails();
+  }, [parsedDraft?.id]);
 
   useEffect(() => {
     const loadChatHistory = async () => {
@@ -669,7 +704,7 @@ const MeetingPage = () => {
               )}
               <article className="meeting-summary__fact">
                 <strong>Repository</strong>
-                <span>{repositoryLabel}</span>
+                <span>{repositoryLabel || '—'}</span>
               </article>
               <article className="meeting-summary__fact">
                 <strong>Participants</strong>
