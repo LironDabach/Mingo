@@ -60,6 +60,18 @@ type MeetingTask = {
 const formatTranscript = (text: string) =>
   text.replace(/([.!?])\s+([A-Z])/g, '$1\n\n$2').trim();
 
+const getTaskKey = (task: MeetingTask) =>
+  task.gitHubIssueId && task.gitHubRepoName
+    ? `${task.gitHubRepoName.trim().toLowerCase()}#${task.gitHubIssueId}`
+    : task._id;
+
+const mergeMeetingTasks = (localTasks: MeetingTask[], repoTasks: MeetingTask[]) => {
+  const byKey = new Map<string, MeetingTask>();
+  localTasks.forEach((task) => byKey.set(getTaskKey(task), task));
+  repoTasks.forEach((task) => byKey.set(getTaskKey(task), task));
+  return Array.from(byKey.values());
+};
+
 const formatDuration = (duration?: number) => {
   if (typeof duration !== 'number' || Number.isNaN(duration)) {
     return '-';
@@ -233,13 +245,25 @@ const HistoryPage = () => {
     return result;
   }, [activeTab, meetings, now, oneMonthAgo, oneWeekAgo, search]);
 
-  const loadMeetingTasks = async (meetingId: string) => {
+  const loadMeetingTasks = async (meeting: Meeting) => {
     try {
       setIsLoadingTasks(true);
-      const response = await fetchWithAuth(`/api/meetings/${meetingId}/tasks`);
-      if (!response.ok) return;
-      const data = (await response.json()) as MeetingTask[];
-      setMeetingTasks(Array.isArray(data) ? data : []);
+      const repo = meeting.repository !== '-' ? meeting.repository : '';
+      const [localResponse, repoResponse] = await Promise.all([
+        fetchWithAuth(`/api/meetings/${meeting.id}/tasks`),
+        currentUser?._id && repo
+          ? fetchWithAuth(`/api/users/${currentUser._id}/tasks?repo=${encodeURIComponent(repo)}`)
+          : Promise.resolve(null),
+      ]);
+
+      const localData = localResponse.ok ? ((await localResponse.json()) as MeetingTask[]) : [];
+      const repoData = repoResponse?.ok ? ((await repoResponse.json()) as MeetingTask[]) : [];
+      setMeetingTasks(
+        mergeMeetingTasks(
+          Array.isArray(localData) ? localData : [],
+          Array.isArray(repoData) ? repoData : [],
+        ),
+      );
     } catch {
       // tasks are optional — don't block summary
     } finally {
@@ -255,7 +279,7 @@ const HistoryPage = () => {
     setSelectedMeeting(meeting);
     setSummaryError('');
     setMeetingTasks([]);
-    void loadMeetingTasks(meeting.id);
+    void loadMeetingTasks(meeting);
 
     if (meeting.isTranscribed) {
       if (meeting.transcript) return;
