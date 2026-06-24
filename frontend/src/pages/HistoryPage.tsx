@@ -55,6 +55,9 @@ type MeetingTask = {
   status?: string;
   gitHubIssueId?: number;
   gitHubRepoName?: string;
+  dueDate?: string;
+  updatedAt?: string;
+  createdAt?: string;
 };
 
 const formatTranscript = (text: string) =>
@@ -69,7 +72,17 @@ const mergeMeetingTasks = (localTasks: MeetingTask[], repoTasks: MeetingTask[]) 
   const byKey = new Map<string, MeetingTask>();
   localTasks.forEach((task) => byKey.set(getTaskKey(task), task));
   repoTasks.forEach((task) => byKey.set(getTaskKey(task), task));
-  return Array.from(byKey.values());
+  return Array.from(byKey.values()).sort((left, right) => {
+    const statusOrder = (left.status === 'Done' ? 1 : 0) - (right.status === 'Done' ? 1 : 0);
+    if (statusOrder !== 0) return statusOrder;
+
+    const leftDate = new Date(left.dueDate || left.updatedAt || left.createdAt || 0).getTime();
+    const rightDate = new Date(right.dueDate || right.updatedAt || right.createdAt || 0).getTime();
+    const safeLeftDate = Number.isNaN(leftDate) || leftDate === 0 ? Number.POSITIVE_INFINITY : leftDate;
+    const safeRightDate = Number.isNaN(rightDate) || rightDate === 0 ? Number.POSITIVE_INFINITY : rightDate;
+
+    return safeLeftDate - safeRightDate;
+  });
 };
 
 const formatDuration = (duration?: number) => {
