@@ -455,6 +455,42 @@
   align-self: flex-start;
 }
 
+.history-chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.history-chat-message {
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.history-chat-message--mingo {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+}
+
+.history-chat-message span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.history-chat-message p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #334155;
+}
+
 /* ── Summary Modal ──────────────────────────────────────────── */
 .history-summary-modal {
   width: min(1020px, 100%);
@@ -552,7 +588,7 @@
 
 .history-modal-body {
   display: grid;
-  grid-template-columns: 1fr 300px;
+  grid-template-columns: minmax(0, 1fr) 380px;
   overflow: hidden;
   flex: 1;
   min-height: 0;

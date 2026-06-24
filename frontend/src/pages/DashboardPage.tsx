@@ -109,6 +109,12 @@ type MeetingTask = {
   createdAt?: string;
 };
 
+type MeetingChatMessage = {
+  sender: 'user' | 'mingo';
+  content: string;
+  timestamp?: string;
+};
+
 const formatTranscript = (text: string) =>
   text.replace(/([.!?])\s+([A-Z])/g, '$1\n\n$2').trim();
 
@@ -355,6 +361,8 @@ const DashboardPage = () => {
   const [summaryError, setSummaryError] = useState('');
   const [meetingTasks, setMeetingTasks] = useState<MeetingTask[]>([]);
   const [isLoadingMeetingTasks, setIsLoadingMeetingTasks] = useState(false);
+  const [meetingChat, setMeetingChat] = useState<MeetingChatMessage[]>([]);
+  const [isLoadingChat, setIsLoadingChat] = useState(false);
   const [hasActiveMeeting, setHasActiveMeeting] = useState(
     Boolean(localStorage.getItem('currentMeetingId')),
   );
@@ -540,6 +548,20 @@ const DashboardPage = () => {
     }
   };
 
+  const loadMeetingChat = async (meetingId: string) => {
+    try {
+      setIsLoadingChat(true);
+      const response = await fetchWithAuth(`/api/meetings/${meetingId}/mingoAgent`);
+      if (!response.ok) return;
+      const data = (await response.json()) as { messages?: MeetingChatMessage[] } | null;
+      setMeetingChat(Array.isArray(data?.messages) ? data.messages : []);
+    } catch {
+      // Chat is optional in the summary modal.
+    } finally {
+      setIsLoadingChat(false);
+    }
+  };
+
   const openRecentSummary = async (meeting: DashboardMeeting) => {
     if (meeting.status !== 'Completed') {
       return;
@@ -548,7 +570,9 @@ const DashboardPage = () => {
     setSelectedMeeting(meeting);
     setSummaryError('');
     setMeetingTasks([]);
+    setMeetingChat([]);
     void loadMeetingTasks(meeting);
+    void loadMeetingChat(meeting.id);
 
     if (meeting.isTranscribed) {
       if (meeting.transcript) return;
@@ -1055,6 +1079,27 @@ const DashboardPage = () => {
                     </div>
                   ) : (
                     <p className="meeting-summary__empty">No tasks for this meeting.</p>
+                  )}
+                </article>
+
+                <article className="history-modal-card">
+                  <h3 className="history-modal-card-title">Chat</h3>
+                  {isLoadingChat ? (
+                    <p className="history-modal-loading">Loading chat…</p>
+                  ) : meetingChat.length > 0 ? (
+                    <div className="history-chat-list">
+                      {meetingChat.map((message, index) => (
+                        <div
+                          key={`${message.timestamp || index}-${message.sender}`}
+                          className={`history-chat-message history-chat-message--${message.sender}`}
+                        >
+                          <span>{message.sender === 'mingo' ? 'Mingo' : 'You'}</span>
+                          <p>{message.content}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="meeting-summary__empty">No chat messages for this meeting.</p>
                   )}
                 </article>
               </div>
