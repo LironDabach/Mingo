@@ -55,10 +55,41 @@ type MeetingTask = {
   status?: string;
   gitHubIssueId?: number;
   gitHubRepoName?: string;
+  dueDate?: string;
+  updatedAt?: string;
+  createdAt?: string;
+};
+
+type MeetingChatMessage = {
+  sender: 'user' | 'mingo';
+  content: string;
+  timestamp?: string;
 };
 
 const formatTranscript = (text: string) =>
   text.replace(/([.!?])\s+([A-Z])/g, '$1\n\n$2').trim();
+
+const getTaskKey = (task: MeetingTask) =>
+  task.gitHubIssueId && task.gitHubRepoName
+    ? `${task.gitHubRepoName.trim().toLowerCase()}#${task.gitHubIssueId}`
+    : task._id;
+
+const mergeMeetingTasks = (localTasks: MeetingTask[], repoTasks: MeetingTask[]) => {
+  const byKey = new Map<string, MeetingTask>();
+  localTasks.forEach((task) => byKey.set(getTaskKey(task), task));
+  repoTasks.forEach((task) => byKey.set(getTaskKey(task), task));
+  return Array.from(byKey.values()).sort((left, right) => {
+    const statusOrder = (left.status === 'Done' ? 1 : 0) - (right.status === 'Done' ? 1 : 0);
+    if (statusOrder !== 0) return statusOrder;
+
+    const leftDate = new Date(left.dueDate || left.updatedAt || left.createdAt || 0).getTime();
+    const rightDate = new Date(right.dueDate || right.updatedAt || right.createdAt || 0).getTime();
+    const safeLeftDate = Number.isNaN(leftDate) || leftDate === 0 ? Number.POSITIVE_INFINITY : leftDate;
+    const safeRightDate = Number.isNaN(rightDate) || rightDate === 0 ? Number.POSITIVE_INFINITY : rightDate;
+
+    return safeLeftDate - safeRightDate;
+  });
+};
 
 const formatDuration = (duration?: number) => {
   if (typeof duration !== 'number' || Number.isNaN(duration)) {
@@ -155,6 +186,8 @@ const HistoryPage = () => {
   const [summaryError, setSummaryError] = useState('');
   const [meetingTasks, setMeetingTasks] = useState<MeetingTask[]>([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
+  const [meetingChat, setMeetingChat] = useState<MeetingChatMessage[]>([]);
+  const [isLoadingChat, setIsLoadingChat] = useState(false);
 
   useEffect(() => {
     const loadMeetings = async () => {
@@ -233,17 +266,43 @@ const HistoryPage = () => {
     return result;
   }, [activeTab, meetings, now, oneMonthAgo, oneWeekAgo, search]);
 
-  const loadMeetingTasks = async (meetingId: string) => {
+  const loadMeetingTasks = async (meeting: Meeting) => {
     try {
       setIsLoadingTasks(true);
-      const response = await fetchWithAuth(`/api/meetings/${meetingId}/tasks`);
-      if (!response.ok) return;
-      const data = (await response.json()) as MeetingTask[];
-      setMeetingTasks(Array.isArray(data) ? data : []);
+      const repo = meeting.repository !== '-' ? meeting.repository : '';
+      const [localResponse, repoResponse] = await Promise.all([
+        fetchWithAuth(`/api/meetings/${meeting.id}/tasks`),
+        currentUser?._id && repo
+          ? fetchWithAuth(`/api/users/${currentUser._id}/tasks?repo=${encodeURIComponent(repo)}`)
+          : Promise.resolve(null),
+      ]);
+
+      const localData = localResponse.ok ? ((await localResponse.json()) as MeetingTask[]) : [];
+      const repoData = repoResponse?.ok ? ((await repoResponse.json()) as MeetingTask[]) : [];
+      setMeetingTasks(
+        mergeMeetingTasks(
+          Array.isArray(localData) ? localData : [],
+          Array.isArray(repoData) ? repoData : [],
+        ),
+      );
     } catch {
       // tasks are optional — don't block summary
     } finally {
       setIsLoadingTasks(false);
+    }
+  };
+
+  const loadMeetingChat = async (meetingId: string) => {
+    try {
+      setIsLoadingChat(true);
+      const response = await fetchWithAuth(`/api/meetings/${meetingId}/mingoAgent`);
+      if (!response.ok) return;
+      const data = (await response.json()) as { messages?: MeetingChatMessage[] } | null;
+      setMeetingChat(Array.isArray(data?.messages) ? data.messages : []);
+    } catch {
+      // Chat is optional in the summary modal.
+    } finally {
+      setIsLoadingChat(false);
     }
   };
 
@@ -255,7 +314,9 @@ const HistoryPage = () => {
     setSelectedMeeting(meeting);
     setSummaryError('');
     setMeetingTasks([]);
-    void loadMeetingTasks(meeting.id);
+    setMeetingChat([]);
+    void loadMeetingTasks(meeting);
+    void loadMeetingChat(meeting.id);
 
     if (meeting.isTranscribed) {
       if (meeting.transcript) return;
@@ -563,6 +624,27 @@ const HistoryPage = () => {
                     </div>
                   ) : (
                     <p className="meeting-summary__empty">No tasks for this meeting.</p>
+                  )}
+                </article>
+
+                <article className="history-modal-card">
+                  <h3 className="history-modal-card-title">Chat</h3>
+                  {isLoadingChat ? (
+                    <p className="history-modal-loading">Loading chat…</p>
+                  ) : meetingChat.length > 0 ? (
+                    <div className="history-chat-list">
+                      {meetingChat.map((message, index) => (
+                        <div
+                          key={`${message.timestamp || index}-${message.sender}`}
+                          className={`history-chat-message history-chat-message--${message.sender}`}
+                        >
+                          <span>{message.sender === 'mingo' ? 'Mingo' : 'You'}</span>
+                          <p>{message.content}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="meeting-summary__empty">No chat messages for this meeting.</p>
                   )}
                 </article>
               </div>

@@ -5,6 +5,8 @@ import StartMeetingModal from '../components/StartMeetingModal/StartMeetingModal
 import NewFutureMeetingModal from '../components/NewFutureMeetingModal/NewFutureMeetingModal';
 import UploadMeetingModal from '../components/UploadMeetingModal/UploadMeetingModal';
 import { fetchWithAuth, getStoredUser, parseResponseBody } from '../lib/auth';
+import './MeetingPage.css';
+import './HistoryPage.css';
 import './DashboardPage.css';
 
 type DashboardMeeting = {
@@ -12,12 +14,21 @@ type DashboardMeeting = {
   title: string;
   scheduledAt: string;
   date: string;
+  dateLabel: string;
+  timeLabel: string;
   duration: string;
+  recordingDuration?: string;
+  status: 'Completed' | 'Upcoming' | 'Live';
+  summary: string;
   repoTag: string;
+  repository: string;
   tasksCount: number;
   gitHubRepoName?: string;
   participants: number;
+  participantLabels: string[];
   attendees: DraftAttendee[];
+  isTranscribed: boolean;
+  transcript?: string;
 };
 
 type DraftAttendee = {
@@ -38,10 +49,14 @@ type RawMeeting = {
   title: string;
   date: string;
   duration?: number;
+  status?: 'upcoming' | 'live' | 'completed';
+  summary?: string;
   gitHubRepoName?: string;
   participants?: RawParticipant[];
   inviteEmails?: string[];
   tasks?: string[];
+  transcriptId?: string;
+  mingoAgentId?: string;
 };
 
 type AverageDurationResponse = {
@@ -82,6 +97,49 @@ type DashboardTask = {
   tag: string;
 };
 
+type MeetingTask = {
+  _id: string;
+  title?: string;
+  description?: string;
+  status?: string;
+  gitHubIssueId?: number;
+  gitHubRepoName?: string;
+  dueDate?: string;
+  updatedAt?: string;
+  createdAt?: string;
+};
+
+type MeetingChatMessage = {
+  sender: 'user' | 'mingo';
+  content: string;
+  timestamp?: string;
+};
+
+const formatTranscript = (text: string) =>
+  text.replace(/([.!?])\s+([A-Z])/g, '$1\n\n$2').trim();
+
+const getTaskKey = (task: MeetingTask) =>
+  task.gitHubIssueId && task.gitHubRepoName
+    ? `${task.gitHubRepoName.trim().toLowerCase()}#${task.gitHubIssueId}`
+    : task._id;
+
+const mergeMeetingTasks = (localTasks: MeetingTask[], repoTasks: MeetingTask[]) => {
+  const byKey = new Map<string, MeetingTask>();
+  localTasks.forEach((task) => byKey.set(getTaskKey(task), task));
+  repoTasks.forEach((task) => byKey.set(getTaskKey(task), task));
+  return Array.from(byKey.values()).sort((left, right) => {
+    const statusOrder = (left.status === 'Done' ? 1 : 0) - (right.status === 'Done' ? 1 : 0);
+    if (statusOrder !== 0) return statusOrder;
+
+    const leftDate = new Date(left.dueDate || left.updatedAt || left.createdAt || 0).getTime();
+    const rightDate = new Date(right.dueDate || right.updatedAt || right.createdAt || 0).getTime();
+    const safeLeftDate = Number.isNaN(leftDate) || leftDate === 0 ? Number.POSITIVE_INFINITY : leftDate;
+    const safeRightDate = Number.isNaN(rightDate) || rightDate === 0 ? Number.POSITIVE_INFINITY : rightDate;
+
+    return safeLeftDate - safeRightDate;
+  });
+};
+
 const formatDashboardMeetingDate = (value: string) => {
   const date = new Date(value);
 
@@ -98,6 +156,19 @@ const formatDashboardMeetingDate = (value: string) => {
   }).format(date);
 };
 
+const formatMeetingDateOnly = (date: Date) =>
+  new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+  }).format(date);
+
+const formatMeetingTime = (date: Date) =>
+  new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+
 const formatRepositoryTag = (value?: string) => {
   if (!value?.trim()) {
     return 'Manual';
@@ -112,6 +183,14 @@ const formatMeetingDuration = (value?: number) => {
   }
 
   return `${Math.round(value)} min`;
+};
+
+const formatRecordingDuration = (seconds: number) => {
+  const s = Math.round(seconds);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
 };
 
 const normalizeDashboardMeeting = (meeting: RawMeeting, index = 0): DashboardMeeting => {
@@ -136,18 +215,38 @@ const normalizeDashboardMeeting = (meeting: RawMeeting, index = 0): DashboardMee
       attendee.email &&
       array.findIndex((candidate) => candidate.email === attendee.email) === index,
   );
+  const meetingDate = new Date(meeting.date);
+  const safeDate = Number.isNaN(meetingDate.getTime()) ? new Date() : meetingDate;
+  const hasDuration = typeof meeting.duration === 'number';
+  const isLive = meeting.status === 'live';
+  const isCompleted =
+    meeting.status === 'completed' ||
+    hasDuration ||
+    (!meeting.status && safeDate.getTime() < Date.now());
+  const isTranscribed = Boolean(meeting.transcriptId && !meeting.mingoAgentId);
 
   return {
     id: meeting._id,
     title: meeting.title || 'Untitled Meeting',
     scheduledAt: meeting.date,
     date: formatDashboardMeetingDate(meeting.date),
+    dateLabel: formatMeetingDateOnly(safeDate),
+    timeLabel: formatMeetingTime(safeDate),
     duration: formatMeetingDuration(meeting.duration),
+    recordingDuration:
+      isTranscribed && typeof meeting.duration === 'number'
+        ? formatRecordingDuration(meeting.duration)
+        : undefined,
+    status: isLive ? 'Live' : isCompleted ? 'Completed' : 'Upcoming',
+    summary: meeting.summary || '',
     repoTag: formatRepositoryTag(meeting.gitHubRepoName),
+    repository: meeting.gitHubRepoName || '-',
     tasksCount: meeting.tasks?.length || 0,
     ...(meeting.gitHubRepoName !== undefined ? { gitHubRepoName: meeting.gitHubRepoName } : {}),
     participants: attendees.length,
+    participantLabels: attendees.map((attendee) => attendee.displayName),
     attendees,
+    isTranscribed,
   };
 };
 
@@ -257,6 +356,13 @@ const DashboardPage = () => {
   const [recentMeetings, setRecentMeetings] = useState<DashboardMeeting[]>([]);
   const [isLoadingRecent, setIsLoadingRecent] = useState(false);
   const [recentError, setRecentError] = useState('');
+  const [selectedMeeting, setSelectedMeeting] = useState<DashboardMeeting | null>(null);
+  const [isSummaryLoading, setIsSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState('');
+  const [meetingTasks, setMeetingTasks] = useState<MeetingTask[]>([]);
+  const [isLoadingMeetingTasks, setIsLoadingMeetingTasks] = useState(false);
+  const [meetingChat, setMeetingChat] = useState<MeetingChatMessage[]>([]);
+  const [isLoadingChat, setIsLoadingChat] = useState(false);
   const [hasActiveMeeting, setHasActiveMeeting] = useState(
     Boolean(localStorage.getItem('currentMeetingId')),
   );
@@ -413,6 +519,107 @@ const DashboardPage = () => {
       setRecentError(err instanceof Error ? err.message : 'Unable to load recent meetings.');
     } finally {
       setIsLoadingRecent(false);
+    }
+  };
+
+  const loadMeetingTasks = async (meeting: DashboardMeeting) => {
+    try {
+      setIsLoadingMeetingTasks(true);
+      const repo = meeting.repository !== '-' ? meeting.repository : '';
+      const [localResponse, repoResponse] = await Promise.all([
+        fetchWithAuth(`/api/meetings/${meeting.id}/tasks`),
+        currentUser?._id && repo
+          ? fetchWithAuth(`/api/users/${currentUser._id}/tasks?repo=${encodeURIComponent(repo)}`)
+          : Promise.resolve(null),
+      ]);
+
+      const localData = localResponse.ok ? ((await localResponse.json()) as MeetingTask[]) : [];
+      const repoData = repoResponse?.ok ? ((await repoResponse.json()) as MeetingTask[]) : [];
+      setMeetingTasks(
+        mergeMeetingTasks(
+          Array.isArray(localData) ? localData : [],
+          Array.isArray(repoData) ? repoData : [],
+        ),
+      );
+    } catch {
+      // Tasks are optional in the summary modal.
+    } finally {
+      setIsLoadingMeetingTasks(false);
+    }
+  };
+
+  const loadMeetingChat = async (meetingId: string) => {
+    try {
+      setIsLoadingChat(true);
+      const response = await fetchWithAuth(`/api/meetings/${meetingId}/mingoAgent`);
+      if (!response.ok) return;
+      const data = (await response.json()) as { messages?: MeetingChatMessage[] } | null;
+      setMeetingChat(Array.isArray(data?.messages) ? data.messages : []);
+    } catch {
+      // Chat is optional in the summary modal.
+    } finally {
+      setIsLoadingChat(false);
+    }
+  };
+
+  const openRecentSummary = async (meeting: DashboardMeeting) => {
+    if (meeting.status !== 'Completed') {
+      return;
+    }
+
+    setSelectedMeeting(meeting);
+    setSummaryError('');
+    setMeetingTasks([]);
+    setMeetingChat([]);
+    void loadMeetingTasks(meeting);
+    void loadMeetingChat(meeting.id);
+
+    if (meeting.isTranscribed) {
+      if (meeting.transcript) return;
+      try {
+        setIsSummaryLoading(true);
+        const response = await fetchWithAuth(`/api/transcripts/${meeting.id}`);
+        if (!response.ok) throw new Error('Unable to load transcript right now.');
+        const data = (await response.json()) as { content?: string };
+        const transcript = data.content || 'No transcript available for this meeting.';
+        const updatedMeeting = { ...meeting, transcript };
+        setSelectedMeeting(updatedMeeting);
+        setRecentMeetings((prev) => prev.map((m) => (m.id === meeting.id ? updatedMeeting : m)));
+      } catch (err) {
+        setSummaryError(err instanceof Error ? err.message : 'Unable to load transcript right now.');
+      } finally {
+        setIsSummaryLoading(false);
+      }
+      return;
+    }
+
+    if (meeting.summary) {
+      return;
+    }
+
+    try {
+      setIsSummaryLoading(true);
+      const response = await fetchWithAuth(`/api/meetings/${meeting.id}/mingoAgent/generateSummary`);
+
+      if (!response.ok) {
+        throw new Error('Unable to load the meeting summary right now.');
+      }
+
+      const data = (await response.json()) as { summary?: string };
+      const summary = data.summary || 'No summary is available for this meeting yet.';
+      const updatedMeeting = { ...meeting, summary };
+
+      setSelectedMeeting(updatedMeeting);
+      setRecentMeetings((prev) => prev.map((m) => (m.id === meeting.id ? updatedMeeting : m)));
+
+      await fetchWithAuth(`/api/meetings/meetings/${meeting.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ summary }),
+      });
+    } catch (err) {
+      setSummaryError(err instanceof Error ? err.message : 'Unable to load the meeting summary right now.');
+    } finally {
+      setIsSummaryLoading(false);
     }
   };
 
@@ -739,7 +946,13 @@ const DashboardPage = () => {
               <p className="dashboard-empty-state">No recent meetings yet.</p>
             )}
             {recentMeetings.map((m) => (
-              <div className="recent-item" key={m.id}>
+              <button
+                type="button"
+                className={`recent-item${m.status === 'Completed' ? ' recent-item--clickable' : ''}`}
+                key={m.id}
+                onClick={() => void openRecentSummary(m)}
+                disabled={m.status !== 'Completed'}
+              >
                 <div className="recent-calendar-icon">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="3" y="4" width="18" height="18" rx="2" />
@@ -767,11 +980,133 @@ const DashboardPage = () => {
                     {m.tasksCount} tasks
                   </span>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
       </main>
+
+      {selectedMeeting && (
+        <div className="meeting-summary-modal__overlay" onClick={() => setSelectedMeeting(null)}>
+          <div className="meeting-summary-modal history-summary-modal" onClick={(e) => e.stopPropagation()}>
+            <div className={`history-modal-header ${selectedMeeting.isTranscribed ? 'history-modal-header--transcribed' : 'history-modal-header--completed'}`}>
+              <div className="history-modal-header__left">
+                <span className="history-modal-eyebrow">
+                  {selectedMeeting.isTranscribed ? '🎙️ Transcribed Meeting' : '📝 Meeting Summary'}
+                </span>
+                <h2 className="history-modal-title">{selectedMeeting.title}</h2>
+                <div className="history-modal-meta">
+                  <span>{selectedMeeting.dateLabel}, {selectedMeeting.timeLabel}</span>
+                  {selectedMeeting.recordingDuration && <><span className="history-modal-sep">·</span><span>{selectedMeeting.recordingDuration}</span></>}
+                  {!selectedMeeting.recordingDuration && selectedMeeting.duration !== 'No duration' && <><span className="history-modal-sep">·</span><span>{selectedMeeting.duration}</span></>}
+                  {selectedMeeting.repository !== '-' && <><span className="history-modal-sep">·</span><span>{selectedMeeting.repository}</span></>}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="history-modal-close"
+                onClick={() => setSelectedMeeting(null)}
+                aria-label="Close"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="history-modal-body">
+              <div className="history-modal-main">
+                {selectedMeeting.isTranscribed ? (
+                  <article className="history-modal-card history-modal-card--full">
+                    <h3 className="history-modal-card-title">Transcript</h3>
+                    {isSummaryLoading ? (
+                      <p className="history-modal-loading">Loading transcript…</p>
+                    ) : summaryError ? (
+                      <p className="history-modal-error">{summaryError}</p>
+                    ) : (
+                      <p className="history-transcript-text">
+                        {selectedMeeting.transcript
+                          ? formatTranscript(selectedMeeting.transcript)
+                          : 'No transcript available for this meeting.'}
+                      </p>
+                    )}
+                  </article>
+                ) : (
+                  <article className="history-modal-card history-modal-card--full">
+                    <h3 className="history-modal-card-title">Summary</h3>
+                    {isSummaryLoading ? (
+                      <p className="history-modal-loading">Generating summary…</p>
+                    ) : summaryError ? (
+                      <p className="history-modal-error">{summaryError}</p>
+                    ) : (
+                      <p className="history-modal-text">{selectedMeeting.summary || 'No summary available yet.'}</p>
+                    )}
+                  </article>
+                )}
+              </div>
+
+              <div className="history-modal-side">
+                <article className="history-modal-card">
+                  <h3 className="history-modal-card-title">Participants</h3>
+                  {selectedMeeting.participantLabels.length > 0 ? (
+                    <div className="meeting-summary__participants">
+                      {selectedMeeting.participantLabels.map((participant) => (
+                        <span key={participant}>{participant}</span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="meeting-summary__empty">No participants recorded.</p>
+                  )}
+                </article>
+
+                <article className="history-modal-card">
+                  <h3 className="history-modal-card-title">Tasks</h3>
+                  {isLoadingMeetingTasks ? (
+                    <p className="history-modal-loading">Loading tasks…</p>
+                  ) : meetingTasks.length > 0 ? (
+                    <div className="history-tasks-list">
+                      {meetingTasks.map((task) => (
+                        <div key={task._id} className="history-task-item">
+                          <span className={`history-task-dot history-task-dot--${task.status === 'Done' ? 'done' : 'todo'}`} />
+                          <div className="history-task-text">
+                            <span>{task.title || task.description || 'Untitled task'}</span>
+                            {task.gitHubIssueId && (
+                              <span className="history-task-tag">{task.gitHubRepoName || 'GitHub'}-{task.gitHubIssueId}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="meeting-summary__empty">No tasks for this meeting.</p>
+                  )}
+                </article>
+
+                <article className="history-modal-card">
+                  <h3 className="history-modal-card-title">Chat</h3>
+                  {isLoadingChat ? (
+                    <p className="history-modal-loading">Loading chat…</p>
+                  ) : meetingChat.length > 0 ? (
+                    <div className="history-chat-list">
+                      {meetingChat.map((message, index) => (
+                        <div
+                          key={`${message.timestamp || index}-${message.sender}`}
+                          className={`history-chat-message history-chat-message--${message.sender}`}
+                        >
+                          <span>{message.sender === 'mingo' ? 'Mingo' : 'You'}</span>
+                          <p>{message.content}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="meeting-summary__empty">No chat messages for this meeting.</p>
+                  )}
+                </article>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showStartMeeting && (
         <StartMeetingModal onClose={() => setShowStartMeeting(false)} />

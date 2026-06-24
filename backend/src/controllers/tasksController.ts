@@ -821,7 +821,11 @@ class tasksController extends baseController {
         return res.status(404).send("Error: Meeting not found");
       }
 
-      return res.json(meeting.tasks ?? []);
+      const localOnlyTasks = ((meeting.tasks ?? []) as any[]).filter(
+        (task) => !(task.gitHubIssueId && task.gitHubRepoName),
+      );
+
+      return res.json(localOnlyTasks);
     } catch (err) {
       console.error(err);
       return res.status(500).send("Error: Can't retrieve tasks for the meeting");
@@ -952,11 +956,15 @@ class tasksController extends baseController {
         requestedRepoNames.map((r) => this.normalizeRepoName(r)),
       );
 
-      // When a specific repo is selected, show only local tasks linked to that repo
+      const localOnlyTasks = localTasks.filter(
+        (task: any) => !(task.gitHubIssueId && task.gitHubRepoName),
+      );
+
+      // When a specific repo is selected, show only local-only tasks linked to that repo.
       const filteredLocalTasks =
         normalizedRequestedRepos.size === 0
-          ? localTasks
-          : localTasks.filter((task: any) => {
+          ? localOnlyTasks
+          : localOnlyTasks.filter((task: any) => {
               if (!task.gitHubRepoName) return false;
               const taskRepo = this.normalizeRepoName(task.gitHubRepoName);
               return (
@@ -968,24 +976,16 @@ class tasksController extends baseController {
               );
             });
 
-      const localGithubKeys = new Set(
-        filteredLocalTasks
-          .filter((task: any) => task.gitHubIssueId && task.gitHubRepoName)
-          .map(
-            (task: any) =>
-              `${this.normalizeRepoName(task.gitHubRepoName)}#${task.gitHubIssueId}`,
-          ),
-      );
       const githubTaskPool = githubTasks;
       const seenRemoteKeys = new Set<string>();
-      const remoteOnlyGithubTasks = githubTaskPool.filter(
+      const uniqueGithubTasks = githubTaskPool.filter(
         (task: any) =>
           {
             const key = task.gitHubIssueId
               ? `${this.normalizeRepoName(task.gitHubRepoName)}#${task.gitHubIssueId}`
               : String(task._id);
 
-            if (localGithubKeys.has(key) || seenRemoteKeys.has(key)) {
+            if (seenRemoteKeys.has(key)) {
               return false;
             }
 
@@ -995,7 +995,7 @@ class tasksController extends baseController {
       );
 
       return res.json(
-        [...filteredLocalTasks, ...remoteOnlyGithubTasks].sort((left: any, right: any) => {
+        [...filteredLocalTasks, ...uniqueGithubTasks].sort((left: any, right: any) => {
           const leftTime = new Date(left.updatedAt || left.createdAt || 0).getTime();
           const rightTime = new Date(right.updatedAt || right.createdAt || 0).getTime();
           return rightTime - leftTime;
