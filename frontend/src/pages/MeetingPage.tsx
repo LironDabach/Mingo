@@ -173,6 +173,45 @@ const MeetingPage = () => {
     loadChatHistory();
   }, []);
 
+  // ── Uploaded transcript ──────────────────────────────────────
+  const [uploadedTranscript, setUploadedTranscript] = useState<{ transcriptId: string; content: string } | null>(null);
+  const [transcriptContent, setTranscriptContent] = useState('');
+  const [isEditingTranscript, setIsEditingTranscript] = useState(false);
+  const [isSavingTranscript, setIsSavingTranscript] = useState(false);
+  const [transcriptSaveError, setTranscriptSaveError] = useState('');
+
+  useEffect(() => {
+    const raw = localStorage.getItem('uploadedTranscript');
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as { transcriptId: string; content: string };
+      setUploadedTranscript(parsed);
+      setTranscriptContent(parsed.content);
+      localStorage.removeItem('uploadedTranscript');
+    } catch {
+      // ignore malformed data
+    }
+  }, []);
+
+  const handleSaveTranscript = async () => {
+    if (!uploadedTranscript || isSavingTranscript) return;
+    setIsSavingTranscript(true);
+    setTranscriptSaveError('');
+    try {
+      const response = await fetchWithAuth(`/api/transcripts/${uploadedTranscript.transcriptId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ content: transcriptContent }),
+      });
+      if (!response.ok) throw new Error('Failed to save transcript.');
+      setUploadedTranscript({ ...uploadedTranscript, content: transcriptContent });
+      setIsEditingTranscript(false);
+    } catch (err) {
+      setTranscriptSaveError(err instanceof Error ? err.message : 'Failed to save transcript.');
+    } finally {
+      setIsSavingTranscript(false);
+    }
+  };
+
   const [isMingoTyping, setIsMingoTyping] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [showSummary, setShowSummary] = useState(false);
@@ -521,7 +560,7 @@ const MeetingPage = () => {
                   <circle cx="12" cy="12" r="10" />
                   <polyline points="12 6 12 12 16 14" />
                 </svg>
-                Live
+                {uploadedTranscript ? 'Transcribed' : 'Live'}
               </span>
               <span className="meeting-hero__divider" />
               <span>
@@ -610,6 +649,59 @@ const MeetingPage = () => {
           </article>
 
           <div className="meeting-side">
+            {uploadedTranscript && (
+              <article className="meeting-card">
+                <header className="meeting-card__header meeting-card__header--with-action">
+                  <h2>Transcript</h2>
+                  {isEditingTranscript ? (
+                    <div className="meeting-transcript-actions">
+                      <button
+                        type="button"
+                        className="meeting-transcript-btn meeting-transcript-btn--cancel"
+                        onClick={() => {
+                          setTranscriptContent(uploadedTranscript.content);
+                          setIsEditingTranscript(false);
+                          setTranscriptSaveError('');
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="meeting-transcript-btn meeting-transcript-btn--save"
+                        onClick={() => void handleSaveTranscript()}
+                        disabled={isSavingTranscript}
+                      >
+                        {isSavingTranscript ? 'Saving…' : 'Save'}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="meeting-transcript-btn meeting-transcript-btn--edit"
+                      onClick={() => setIsEditingTranscript(true)}
+                    >
+                      Edit
+                    </button>
+                  )}
+                </header>
+                <div className="meeting-transcript-body">
+                  {isEditingTranscript ? (
+                    <textarea
+                      className="meeting-transcript-textarea"
+                      value={transcriptContent}
+                      onChange={(e) => setTranscriptContent(e.target.value)}
+                    />
+                  ) : (
+                    <p className="meeting-transcript-text">{transcriptContent}</p>
+                  )}
+                  {transcriptSaveError && (
+                    <p className="meeting-transcript-error">{transcriptSaveError}</p>
+                  )}
+                </div>
+              </article>
+            )}
+
             <article className="meeting-card">
               <header className="meeting-card__header">
                 <h2>Tasks</h2>
