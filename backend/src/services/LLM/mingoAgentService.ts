@@ -1473,9 +1473,35 @@ class MingoAgentService {
 
     const meeting = await this.getMeetingOrThrow(meetingId);
 
+    // Load chat history for this meeting so the summary can reflect what the
+    // user and Mingo discussed during the live session.
+    let chatHistory: ChatMessage[] = [];
+    try {
+      const chatDoc = await this.chats.findOne({ meetingID: meetingId }).lean();
+      if (chatDoc && Array.isArray((chatDoc as any).messages)) {
+        chatHistory = (chatDoc as any).messages.map((entry: any) => ({
+          sender: entry.sender as MessageSender,
+          content: entry.content,
+          timestamp: new Date(entry.timestamp),
+        }));
+      }
+    } catch {
+      // Chat is optional — proceed without it if unavailable.
+    }
+
+    const chatSection =
+      chatHistory.length > 0
+        ? [
+            "",
+            "Live meeting chat (questions and answers during the meeting):",
+            this.serializeHistory(chatHistory),
+          ].join("\n")
+        : "";
+
     const summaryPrompt = [
       "You are Mingo, an AI assistant for meeting management.",
       "Generate a concise summary of the key points, decisions, and action items from the meeting based on the following context.",
+      "If live chat history is provided, incorporate the topics and insights discussed there into the summary.",
       "Use only the provided meeting data as facts. Do not invent details that are not present in the context.",
       "",
       "Meeting context summary:",
@@ -1495,6 +1521,7 @@ class MingoAgentService {
       "",
       "Meeting context JSON:",
       this.formatContextAsJson(meeting),
+      chatSection,
       "",
       "Summary as Mingo:",
     ].join("\n");
