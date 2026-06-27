@@ -33,6 +33,8 @@ type ChatMessage = {
   text: string;
 };
 
+type SuggestedTask = { title: string; description: string };
+
 type Task = {
   id: string;
   meetingId?: string;
@@ -180,6 +182,13 @@ const MeetingPage = () => {
   const [isSavingTranscript, setIsSavingTranscript] = useState(false);
   const [transcriptSaveError, setTranscriptSaveError] = useState('');
 
+  // ── Suggested tasks (from upload modal) ─────────────────────
+  const [suggestedTasks, setSuggestedTasks] = useState<SuggestedTask[]>([]);
+  const [selectedSuggestedTaskIndices, setSelectedSuggestedTaskIndices] = useState<Set<number>>(new Set());
+  const [isCreatingSuggestedTasks, setIsCreatingSuggestedTasks] = useState(false);
+  const [suggestedTasksCreated, setSuggestedTasksCreated] = useState(false);
+  const [suggestedTasksError, setSuggestedTasksError] = useState('');
+
   useEffect(() => {
     const raw = localStorage.getItem('uploadedTranscript');
     if (!raw) return;
@@ -188,6 +197,17 @@ const MeetingPage = () => {
       setUploadedTranscript(parsed);
       setTranscriptContent(parsed.content);
       localStorage.removeItem('uploadedTranscript');
+    } catch {
+      // ignore malformed data
+    }
+
+    const rawTasks = localStorage.getItem('uploadedSuggestedTasks');
+    if (!rawTasks) return;
+    try {
+      const parsedTasks = JSON.parse(rawTasks) as SuggestedTask[];
+      setSuggestedTasks(parsedTasks);
+      setSelectedSuggestedTaskIndices(new Set(parsedTasks.map((_, i) => i)));
+      localStorage.removeItem('uploadedSuggestedTasks');
     } catch {
       // ignore malformed data
     }
@@ -212,9 +232,54 @@ const MeetingPage = () => {
     }
   };
 
+  const toggleSuggestedTaskIndex = (index: number) => {
+    setSelectedSuggestedTaskIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const handleCreateSuggestedTasks = async () => {
+    if (selectedSuggestedTaskIndices.size === 0 || isCreatingSuggestedTasks) return;
+    const meetingId =
+      meetingIdRef.current ||
+      parsedDraft?.id ||
+      localStorage.getItem('currentMeetingId') ||
+      '';
+    if (!meetingId) return;
+
+    setIsCreatingSuggestedTasks(true);
+    setSuggestedTasksError('');
+
+    const tasksToCreate = suggestedTasks.filter((_, i) => selectedSuggestedTaskIndices.has(i));
+    try {
+      await Promise.all(
+        tasksToCreate.map(async (task) => {
+          const response = await fetchWithAuth(`/api/meetings/${meetingId}/tasks`, {
+            method: 'POST',
+            body: JSON.stringify({ title: task.title, description: task.description }),
+          });
+          if (!response.ok) throw new Error('Task creation failed');
+        }),
+      );
+      setSuggestedTasksCreated(true);
+    } catch {
+      setSuggestedTasksError('Some tasks could not be created. Please try again.');
+    } finally {
+      setIsCreatingSuggestedTasks(false);
+    }
+  };
+
   const [isMingoTyping, setIsMingoTyping] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [showSummary, setShowSummary] = useState(false);
+
+  useEffect(() => {
+    document.body.style.overflow = showSummary ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [showSummary]);
   const [summaryText, setSummaryText] = useState('');
   const [summaryMeetingId, setSummaryMeetingId] = useState(initialMeetingId);
   const [summaryLoading, setSummaryLoading] = useState(false);
@@ -318,7 +383,10 @@ const MeetingPage = () => {
         `/api/meetings/${meetingId}/mingoAgent/generateReply`,
         {
           method: 'POST',
-          body: JSON.stringify({ message: trimmed }),
+          body: JSON.stringify({
+            message: trimmed,
+            ...(uploadedTranscript ? { transcript: transcriptContent } : {}),
+          }),
         }
       );
 
@@ -697,6 +765,49 @@ const MeetingPage = () => {
                   )}
                   {transcriptSaveError && (
                     <p className="meeting-transcript-error">{transcriptSaveError}</p>
+                  )}
+                </div>
+              </article>
+            )}
+
+            {suggestedTasks.length > 0 && (
+              <article className="meeting-card">
+                <header className="meeting-card__header">
+                  <h2>Suggested Tasks</h2>
+                </header>
+                <div className="meeting-suggested-tasks">
+                  {suggestedTasks.map((task, i) => (
+                    <label key={i} className="meeting-suggested-task-item">
+                      <input
+                        type="checkbox"
+                        checked={selectedSuggestedTaskIndices.has(i)}
+                        onChange={() => toggleSuggestedTaskIndex(i)}
+                        disabled={suggestedTasksCreated}
+                      />
+                      <div className="meeting-suggested-task-text">
+                        <strong>{task.title}</strong>
+                        {task.description && <span>{task.description}</span>}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                <div className="meeting-suggested-task-footer">
+                  {suggestedTasksCreated ? (
+                    <span className="meeting-suggested-tasks-done">✓ Tasks created</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="meeting-suggested-task-btn"
+                      onClick={() => void handleCreateSuggestedTasks()}
+                      disabled={selectedSuggestedTaskIndices.size === 0 || isCreatingSuggestedTasks}
+                    >
+                      {isCreatingSuggestedTasks
+                        ? 'Creating…'
+                        : `Create ${selectedSuggestedTaskIndices.size} Task${selectedSuggestedTaskIndices.size !== 1 ? 's' : ''}`}
+                    </button>
+                  )}
+                  {suggestedTasksError && (
+                    <p className="meeting-suggested-tasks-error">{suggestedTasksError}</p>
                   )}
                 </div>
               </article>

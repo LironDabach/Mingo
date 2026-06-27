@@ -26,7 +26,7 @@ class mingoAgentController extends baseController {
 
   async generateReply(req: AuthRequest, res: Response) {
     const meetingId = req.params.meetingId;
-    const { message } = req.body;
+    const { message, transcript } = req.body;
 
     if (!meetingId) {
       return res.status(400).json({ error: "Meeting ID is required" });
@@ -44,6 +44,7 @@ class mingoAgentController extends baseController {
         meetingId,
         message,
         req.user?._id,
+        typeof transcript === "string" ? transcript : undefined,
       );
       res.json({ reply: result.reply });
     } catch (err) {

@@ -191,6 +191,9 @@
   flex-direction: column;
   gap: 7px;
   margin-top: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .upload-task-item {
@@ -256,6 +259,7 @@
 
 .upload-summary-modal {
   width: min(1040px, 100%);
+  overflow-y: auto; /* safety net if content still overflows */
 }
 
 /* ── Submit button ──────────────────────────────────────────── */

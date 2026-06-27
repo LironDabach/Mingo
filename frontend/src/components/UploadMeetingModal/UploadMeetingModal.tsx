@@ -490,6 +490,7 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
                   'uploadedTranscript',
                   JSON.stringify({ transcriptId: result.transcript._id, content: text }),
                 );
+                localStorage.setItem('uploadedSuggestedTasks', JSON.stringify(suggestedTasks));
                 onClose();
                 navigate('/meeting');
               }}
