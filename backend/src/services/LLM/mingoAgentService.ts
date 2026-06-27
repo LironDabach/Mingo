@@ -1600,4 +1600,37 @@ class MingoAgentService {
       const data = (await response.json()) as {
         choices?: Array<{ message?: { content?: string } }>;
       };
-     
+      const content = data.choices?.[0]?.message?.content?.trim() ?? "";
+      const parsed: unknown = JSON.parse(content);
+
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        !Array.isArray((parsed as { tasks?: unknown }).tasks)
+      ) {
+        return { tasks: [] };
+      }
+
+      const tasks = ((parsed as { tasks: unknown[] }).tasks)
+        .filter(
+          (item): item is { title: unknown; description?: unknown } =>
+            Boolean(item) && typeof item === "object",
+        )
+        .map((item) => ({
+          title: typeof item.title === "string" ? item.title.trim() : "",
+          description:
+            typeof item.description === "string" ? item.description.trim() : "",
+        }))
+        .filter((task) => task.title.length > 0)
+        .slice(0, 8);
+
+      return { tasks };
+    } catch (err) {
+      console.error("[TaskSuggestions] Error:", err);
+      return { tasks: [] };
+    }
+  }
+}
+
+export default new MingoAgentService();
+export { MingoAgentService };
