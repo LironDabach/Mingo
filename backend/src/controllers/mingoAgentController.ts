@@ -46,7 +46,7 @@ class mingoAgentController extends baseController {
         req.user?._id,
         typeof transcript === "string" ? transcript : undefined,
       );
-      res.json({ reply: result.reply });
+      res.json({ reply: result.reply, taskActionPerformed: result.taskActionPerformed });
     } catch (err) {
       console.error(err);
       res.status(500).send("Error: Can't generate reply for the meeting");
