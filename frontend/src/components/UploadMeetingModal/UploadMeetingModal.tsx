@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { fetchWithAuth, getStoredUser, parseResponseBody } from '../../lib/auth';
 import '../StartMeetingModal/StartMeetingModal.css';
 import '../../pages/MeetingPage.css';
@@ -75,6 +76,7 @@ const formatDuration = (seconds: number) => {
 };
 
 const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
+  const navigate = useNavigate();
   const currentUser = getStoredUser();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState('');
@@ -469,6 +471,31 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
                     : `Save ${selectedTaskIndices.size} Task${selectedTaskIndices.size > 1 ? 's' : ''} Locally`}
               </button>
             ) : null}
+            <button
+              type="button"
+              className="meeting-summary-modal__mail"
+              onClick={() => {
+                localStorage.setItem('currentMeetingId', meeting._id);
+                localStorage.setItem(
+                  'currentMeetingDraft',
+                  JSON.stringify({
+                    id: meeting._id,
+                    title: meeting.title,
+                    date: meeting.date,
+                    gitHubRepoName: meeting.gitHubRepoName || '',
+                    attendees,
+                  }),
+                );
+                localStorage.setItem(
+                  'uploadedTranscript',
+                  JSON.stringify({ transcriptId: result.transcript._id, content: text }),
+                );
+                onClose();
+                navigate('/meeting');
+              }}
+            >
+              View in Meeting
+            </button>
             <button type="button" className="meeting-summary-modal__home" onClick={onClose}>
               Back to Home
             </button>

@@ -100,6 +100,12 @@ router.post(
  *             schema:
  *               $ref: '#/components/schemas/TranscriptCreateResponse'
  */
+router.put(
+  "/transcripts/:transcriptId",
+  authenticate,
+  transcriptController.updateTranscript.bind(transcriptController),
+);
+
 router.post(
   "/transcript/text",
   authenticate,

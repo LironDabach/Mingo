@@ -68,6 +68,33 @@ class transcriptController extends baseController {
     }
   }
 
+  async updateTranscript(req: AuthRequest, res: Response) {
+    const { transcriptId } = req.params;
+    const { content } = req.body;
+
+    if (!transcriptId) {
+      return res.status(400).json({ error: "Transcript ID is required" });
+    }
+    if (!content || typeof content !== "string") {
+      return res.status(400).json({ error: "Content is required" });
+    }
+
+    try {
+      const transcript = await this.model.findByIdAndUpdate(
+        transcriptId,
+        { content },
+        { new: true },
+      );
+      if (!transcript) {
+        return res.status(404).json({ error: "Transcript not found" });
+      }
+      return res.json(transcript);
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ error: "Failed to update transcript" });
+    }
+  }
+
   async saveTranscriptTXT(req: AuthRequest, res: Response) {
     if (!req.user?._id) {
       return res.status(401).json({ error: "Unauthorized" });
