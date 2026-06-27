@@ -1211,7 +1211,12 @@ class MingoAgentService {
     relatedTaskFacts: TaskFactSummary[],
     history: ChatMessage[],
     userMessage: string,
+    transcript?: string,
   ) {
+    const transcriptSection = transcript?.trim()
+      ? ["", "Meeting transcript (verbatim audio transcription):", transcript.trim().slice(0, 6000)]
+      : [];
+
     return [
       "You are Mingo, an AI assistant for meeting management.",
       "You are Mingo, the AI assistant of a meeting-management system.",
@@ -1220,6 +1225,9 @@ class MingoAgentService {
       "Your scope is the meeting domain only: meetings, agendas, summaries, action items, decisions, blockers, follow-ups, participants, scheduling implications, tasks, and meeting-related questions.",
       "Be generic within that domain so you can handle many different meeting-oriented requests without needing custom code paths.",
       "Treat the current meeting as the primary context.",
+      transcript?.trim()
+        ? "A verbatim transcript of this meeting is provided. Use it as a primary source when answering questions about what was said, discussed, or decided."
+        : "",
       "Use the retrieval plan only as search guidance. Answer only from the provided structured facts and meeting data.",
       "The structured task facts are the authoritative source for task titles, status, repositories, issue numbers, assignees, due dates, and counts.",
       "For task, action item, status, repository, or count questions, answer from the structured task facts first. Do not infer that there are no tasks from empty meeting.tasks arrays if task facts are present.",
@@ -1241,6 +1249,7 @@ class MingoAgentService {
       "",
       "Primary meeting JSON:",
       this.formatContextAsJson(meeting),
+      ...transcriptSection,
       "",
       this.formatTaskFactSummary(primaryTaskFacts, "Primary meeting and repository"),
       "",
@@ -1363,6 +1372,7 @@ class MingoAgentService {
     meetingId: string,
     message: string,
     userId?: string,
+    transcript?: string,
   ): Promise<AgentReply> {
     if (!meetingId) {
       throw new MingoAgentError("Meeting ID is required", 400);
@@ -1416,6 +1426,7 @@ class MingoAgentService {
       relatedTaskFacts,
       recentHistory,
       normalizedMessage,
+      transcript,
     );
 
     let reply = "";
