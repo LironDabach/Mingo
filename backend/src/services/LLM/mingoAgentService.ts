@@ -26,7 +26,18 @@ type AgentReply = {
   chat: any;
   reply: string;
   messages: ChatMessage[];
+  taskActionPerformed: boolean;
 };
+
+type TaskAction =
+  | { type: "create"; title: string; description: string }
+  | { type: "close"; issueNumber: number }
+  | { type: "reopen"; issueNumber: number }
+  | { type: "assign"; issueNumber: number; assignee: string }
+  | { type: "rename"; issueNumber: number; title: string }
+  | { type: "delete"; issueNumber: number };
+
+type TaskActionResult = { success: boolean; description: string };
 
 type RetrievalScope =
   | "current_meeting"
@@ -815,6 +826,344 @@ class MingoAgentService {
     return `I couldn't reach the model, but the available context for ${meetingTitle} is still limited.`;
   }
 
+  // ── Task action detection ─────────────────────────────────────
+
+  private async detectTaskAction(
+    userMessage: string,
+    taskFacts: TaskFactSummary,
+    repoName: string,
+  ): Promise<TaskAction | null> {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return null;
+
+    const taskList = taskFacts.tasks.length
+      ? taskFacts.tasks
+          .map(
+            (t) =>
+              `- #${t.issueNumber ?? "?"} "${t.title}" (${t.status})${t.assignee ? ` assignee=${t.assignee}` : ""}`,
+          )
+          .join("\n")
+      : "No tasks available.";
+
+    const systemPrompt = [
+      "You are a task-command classifier for a meeting assistant.",
+      "Decide whether the user message is a task management command.",
+      `Repository in context: ${repoName || "unknown"}.`,
+      "If the message is a command, return JSON matching exactly one of these shapes:",
+      '  {"action":"create","title":"...","description":"..."}',
+      '  {"action":"close","issueNumber":number}',
+      '  {"action":"reopen","issueNumber":number}',
+      '  {"action":"assign","issueNumber":number,"assignee":"githubUsername"}',
+      '  {"action":"rename","issueNumber":number,"title":"new title"}',
+      '  {"action":"delete","issueNumber":number}',
+      "Use 'delete' when the user says delete, remove, or get rid of a task/issue.",
+      "Use 'close' when the user says close, complete, or mark as done.",
+      "If the message is NOT a task command, return: {\"action\":null}",
+      "Return ONLY valid JSON. No prose, no markdown.",
+      "",
+      "Current tasks for reference:",
+      taskList,
+    ].join("\n");
+
+    try {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          temperature: 0,
+          max_tokens: 150,
+          response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userMessage },
+          ],
+        }),
+      });
+
+      if (!response.ok) return null;
+
+      const data = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const raw = data.choices?.[0]?.message?.content?.trim() ?? "";
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+
+      if (!parsed.action || parsed.action === null) return null;
+
+      const action = String(parsed.action);
+
+      if (action === "create") {
+        const title = typeof parsed.title === "string" ? parsed.title.trim() : "";
+        if (!title) return null;
+        return {
+          type: "create",
+          title,
+          description: typeof parsed.description === "string" ? parsed.description.trim() : "",
+        };
+      }
+
+      const issueNumber =
+        typeof parsed.issueNumber === "number"
+          ? parsed.issueNumber
+          : Number(parsed.issueNumber);
+
+      if (!Number.isFinite(issueNumber) || issueNumber <= 0) return null;
+
+      if (action === "close") return { type: "close", issueNumber };
+      if (action === "reopen") return { type: "reopen", issueNumber };
+      if (action === "delete") return { type: "delete", issueNumber };
+
+      if (action === "assign") {
+        const assignee = typeof parsed.assignee === "string" ? parsed.assignee.trim() : "";
+        if (!assignee) return null;
+        return { type: "assign", issueNumber, assignee };
+      }
+
+      if (action === "rename") {
+        const title = typeof parsed.title === "string" ? parsed.title.trim() : "";
+        if (!title) return null;
+        return { type: "rename", issueNumber, title };
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async resolveRepoFullName(authorization: string, repoName: string): Promise<string> {
+    if (repoName.includes("/")) return repoName;
+    try {
+      const repos = await this.fetchGitHubJson<Array<{ name: string; full_name: string }>>(
+        "https://api.github.com/user/repos?sort=updated&per_page=100",
+        authorization,
+      );
+      const match = repos?.find(
+        (r) => r.name.trim().toLowerCase() === repoName.trim().toLowerCase(),
+      );
+      return match?.full_name ?? repoName;
+    } catch {
+      return repoName;
+    }
+  }
+
+  private async patchGitHubIssue(
+    authorization: string,
+    repoFullName: string,
+    issueNumber: number,
+    patch: Record<string, unknown>,
+  ): Promise<{ number: number; title?: string; state?: string; html_url?: string } | null> {
+    try {
+      const response = await fetch(
+        `https://api.github.com/repos/${repoFullName}/issues/${issueNumber}`,
+        {
+          method: "PATCH",
+          headers: {
+            Accept: "application/vnd.github+json",
+            Authorization: authorization,
+            "Content-Type": "application/json",
+            "User-Agent": "Mingo",
+            "X-GitHub-Api-Version": "2022-11-28",
+          },
+          body: JSON.stringify(patch),
+        },
+      );
+      if (!response.ok) return null;
+      return (await response.json()) as {
+        number: number;
+        title?: string;
+        state?: string;
+        html_url?: string;
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private async createGitHubIssue(
+    authorization: string,
+    repoFullName: string,
+    title: string,
+    body?: string,
+  ): Promise<{ number: number; html_url?: string } | null> {
+    try {
+      const response = await fetch(
+        `https://api.github.com/repos/${repoFullName}/issues`,
+        {
+          method: "POST",
+          headers: {
+            Accept: "application/vnd.github+json",
+            Authorization: authorization,
+            "Content-Type": "application/json",
+            "User-Agent": "Mingo",
+            "X-GitHub-Api-Version": "2022-11-28",
+          },
+          body: JSON.stringify({ title, body: body || "" }),
+        },
+      );
+      if (!response.ok) return null;
+      return (await response.json()) as { number: number; html_url?: string };
+    } catch {
+      return null;
+    }
+  }
+
+  private async executeTaskAction(
+    action: TaskAction,
+    meeting: any,
+    userId?: string,
+  ): Promise<TaskActionResult> {
+    const repoName: string =
+      typeof meeting?.gitHubRepoName === "string" ? meeting.gitHubRepoName.trim() : "";
+
+    if (!repoName) {
+      return { success: false, description: "No GitHub repository is linked to this meeting." };
+    }
+
+    if (!userId) {
+      return { success: false, description: "User not authenticated." };
+    }
+
+    const user = await this.users.findById(userId);
+    const authorization = this.getGitHubAuthorization(user);
+
+    if (!authorization) {
+      return {
+        success: false,
+        description: "GitHub account is not connected. Go to Settings to link your account.",
+      };
+    }
+
+    const repoFullName = await this.resolveRepoFullName(authorization, repoName);
+
+    if (action.type === "create") {
+      const issue = await this.createGitHubIssue(
+        authorization,
+        repoFullName,
+        action.title,
+        action.description,
+      );
+      if (!issue) {
+        return { success: false, description: `Failed to create issue in ${repoFullName}.` };
+      }
+      // Also persist locally so the meeting task list picks it up.
+      try {
+        const task = await this.tasks.create({
+          title: action.title,
+          description: action.description,
+          status: "To Do",
+          gitHubIssueId: issue.number,
+          gitHubRepoName: repoFullName,
+          gitHubRepoOwner: userId,
+        });
+        if (Array.isArray(meeting.tasks)) {
+          meeting.tasks.push(task._id);
+          await this.meetings.findByIdAndUpdate(meeting._id, { $push: { tasks: task._id } });
+        }
+      } catch {
+        // Local persistence is best-effort; the GitHub issue was created successfully.
+      }
+      return {
+        success: true,
+        description: `Created GitHub issue #${issue.number} "${action.title}" in ${repoFullName}.${issue.html_url ? ` URL: ${issue.html_url}` : ""}`,
+      };
+    }
+
+    if (action.type === "close") {
+      const result = await this.patchGitHubIssue(authorization, repoFullName, action.issueNumber, {
+        state: "closed",
+      });
+      if (!result) {
+        return {
+          success: false,
+          description: `Failed to close issue #${action.issueNumber} in ${repoFullName}.`,
+        };
+      }
+      return {
+        success: true,
+        description: `Closed issue #${action.issueNumber} "${result.title ?? ""}" in ${repoFullName}.`,
+      };
+    }
+
+    if (action.type === "reopen") {
+      const result = await this.patchGitHubIssue(authorization, repoFullName, action.issueNumber, {
+        state: "open",
+      });
+      if (!result) {
+        return {
+          success: false,
+          description: `Failed to reopen issue #${action.issueNumber} in ${repoFullName}.`,
+        };
+      }
+      return {
+        success: true,
+        description: `Reopened issue #${action.issueNumber} "${result.title ?? ""}" in ${repoFullName}.`,
+      };
+    }
+
+    if (action.type === "assign") {
+      const result = await this.patchGitHubIssue(authorization, repoFullName, action.issueNumber, {
+        assignees: [action.assignee],
+      });
+      if (!result) {
+        return {
+          success: false,
+          description: `Failed to assign issue #${action.issueNumber} to ${action.assignee}.`,
+        };
+      }
+      return {
+        success: true,
+        description: `Assigned issue #${action.issueNumber} "${result.title ?? ""}" to @${action.assignee} in ${repoFullName}.`,
+      };
+    }
+
+    if (action.type === "rename") {
+      const result = await this.patchGitHubIssue(authorization, repoFullName, action.issueNumber, {
+        title: action.title,
+      });
+      if (!result) {
+        return {
+          success: false,
+          description: `Failed to rename issue #${action.issueNumber}.`,
+        };
+      }
+      return {
+        success: true,
+        description: `Renamed issue #${action.issueNumber} to "${action.title}" in ${repoFullName}.`,
+      };
+    }
+
+    if (action.type === "delete") {
+      // Remove any local task record that mirrors this GitHub issue.
+      try {
+        await this.tasks.findOneAndDelete({ gitHubIssueId: action.issueNumber });
+      } catch {
+        // Best-effort — proceed even if local record is missing.
+      }
+
+      // GitHub REST API does not support true issue deletion; close instead.
+      const result = await this.patchGitHubIssue(authorization, repoFullName, action.issueNumber, {
+        state: "closed",
+      });
+      if (!result) {
+        return {
+          success: false,
+          description: `Failed to delete issue #${action.issueNumber} in ${repoFullName}.`,
+        };
+      }
+      return {
+        success: true,
+        description: `Deleted issue #${action.issueNumber} "${result.title ?? ""}" from ${repoFullName}. The local record has been removed. Note: GitHub does not allow full issue deletion via the API, so the issue has been closed on GitHub.`,
+      };
+    }
+
+    return { success: false, description: "Unknown action." };
+  }
+
   private buildFallbackSummary(meeting: any) {
     const meetingTitle =
       typeof meeting?.title === "string" && meeting.title.trim()
@@ -1212,6 +1561,7 @@ class MingoAgentService {
     history: ChatMessage[],
     userMessage: string,
     transcript?: string,
+    actionResult?: TaskActionResult,
   ) {
     const transcriptSection = transcript?.trim()
       ? ["", "Meeting transcript (verbatim audio transcription):", transcript.trim().slice(0, 6000)]
@@ -1287,6 +1637,15 @@ class MingoAgentService {
       "Recent chat history:",
       this.serializeHistory(history),
       "",
+      ...(actionResult
+        ? [
+            actionResult.success
+              ? `Task action executed successfully: ${actionResult.description}`
+              : `Task action failed: ${actionResult.description}`,
+            "Inform the user of this result naturally in your reply. Do not repeat the raw description verbatim — rephrase it conversationally.",
+            "",
+          ]
+        : []),
       `User message: ${userMessage}`,
       "",
       "Answer as Mingo:",
@@ -1401,17 +1760,26 @@ class MingoAgentService {
       timestamp: new Date(),
     };
 
-    const retrievalPlan = await this.buildRetrievalPlan(
-      meeting,
-      recentHistory,
-      normalizedMessage,
-    );
+    const primaryTaskFacts = await this.loadTaskFactsForMeeting(meeting, userId);
+
+    const repoName: string =
+      typeof meeting?.gitHubRepoName === "string" ? meeting.gitHubRepoName.trim() : "";
+
+    const [retrievalPlan, detectedAction] = await Promise.all([
+      this.buildRetrievalPlan(meeting, recentHistory, normalizedMessage),
+      this.detectTaskAction(normalizedMessage, primaryTaskFacts, repoName),
+    ]);
+
+    let actionResult: TaskActionResult | undefined;
+    if (detectedAction) {
+      actionResult = await this.executeTaskAction(detectedAction, meeting, userId);
+    }
+
     const relatedMeetings = await this.findRelevantMeetings(
       userId,
       meeting,
       retrievalPlan,
     );
-    const primaryTaskFacts = await this.loadTaskFactsForMeeting(meeting, userId);
     const relatedTaskFacts = await Promise.all(
       relatedMeetings.map((relatedMeeting) =>
         this.loadTaskFactsForMeeting(relatedMeeting, userId),
@@ -1427,6 +1795,7 @@ class MingoAgentService {
       recentHistory,
       normalizedMessage,
       transcript,
+      actionResult,
     );
 
     let reply = "";
@@ -1474,6 +1843,7 @@ class MingoAgentService {
       chat,
       reply,
       messages: updatedMessages,
+      taskActionPerformed: Boolean(actionResult?.success),
     };
   }
 

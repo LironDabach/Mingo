@@ -289,61 +289,60 @@ const MeetingPage = () => {
   const [emailError, setEmailError] = useState('');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [taskUpdateError, setTaskUpdateError] = useState('');
+  const [isRefreshingTasks, setIsRefreshingTasks] = useState(false);
+
+  const loadTasks = async (silent = false) => {
+    const meetingId =
+      meetingIdRef.current ||
+      parsedDraft?.id ||
+      localStorage.getItem('currentMeetingId') ||
+      '';
+
+    const repo = parsedDraft?.gitHubRepoName || repositoryLabel;
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const userId = user.id || user._id;
+
+    if (!userId || !repo) return;
+
+    if (!silent) setIsRefreshingTasks(true);
+
+    try {
+      const response = await fetchWithAuth(
+        `/api/users/${userId}/tasks?repo=${encodeURIComponent(repo)}`
+      );
+
+      if (!response.ok) throw new Error('Failed to load tasks');
+
+      const data = await response.json();
+
+      const backendTasks = (data.tasks || data || []).map(
+        (task: any, index: number) => ({
+          id: String(task.id || task._id || Date.now() + index),
+          meetingId: task.meeting?._id,
+          title: task.title || task.description || 'Untitled task',
+          assignee: task.assignee || task.assigneeName || task.owner || 'Unassigned',
+          due: task.due || task.dueDate || 'No due date',
+          tag: task.tag || task.jiraKey || `TASK-${task.gitHubIssueId || index + 1}`,
+          htmlUrl: task.htmlUrl || task.html_url || '',
+          source: task.source === 'github' ? 'github' : 'local',
+          gitHubIssueId: task.gitHubIssueId,
+          gitHubRepoName: task.gitHubRepoName || repo,
+          done:
+            typeof task.status === 'string' &&
+            task.status.toLowerCase() === 'done',
+        })
+      );
+
+      if (backendTasks.length > 0) setTasks(backendTasks);
+    } catch (error) {
+      console.error('Failed to load tasks:', error);
+    } finally {
+      if (!silent) setIsRefreshingTasks(false);
+    }
+  };
 
   useEffect(() => {
-    const loadTasks = async () => {
-
-      const meetingId =
-        meetingIdRef.current ||
-        parsedDraft?.id ||
-        localStorage.getItem('currentMeetingId') ||
-        '';
-
-      const repo = parsedDraft?.gitHubRepoName || repositoryLabel;
-
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      const userId = user.id || user._id;
-
-      if (!userId || !repo) return;
-
-      try {
-        const response = await fetchWithAuth(
-          `/api/users/${userId}/tasks?repo=${encodeURIComponent(repo)}`
-        );
-
-        if (!response.ok) {
-          throw new Error('Failed to load tasks');
-        }
-
-        const data = await response.json();
-
-        const backendTasks = (data.tasks || data || []).map(
-          (task: any, index: number) => ({
-            id: String(task.id || task._id || Date.now() + index),
-            meetingId: task.meeting?._id,
-            title: task.title || task.description || 'Untitled task',
-            assignee: task.assignee || task.assigneeName || task.owner || 'Unassigned',
-            due: task.due || task.dueDate || 'No due date',
-            tag: task.tag || task.jiraKey || `TASK-${task.gitHubIssueId || index + 1}`,
-            htmlUrl: task.htmlUrl || task.html_url || '',
-            source: task.source === 'github' ? 'github' : 'local',
-            gitHubIssueId: task.gitHubIssueId,
-            gitHubRepoName: task.gitHubRepoName || repo,
-            done:
-              typeof task.status === 'string' &&
-              task.status.toLowerCase() === 'done',
-          })
-        );
-
-        if (backendTasks.length > 0) {
-          setTasks(backendTasks);
-        }
-      } catch (error) {
-        console.error('Failed to load tasks:', error);
-      }
-    };
-
-    loadTasks();
+    void loadTasks(true);
   }, []);
 
   const completedTasks = tasks.filter((task) => task.done);
@@ -404,6 +403,10 @@ const MeetingPage = () => {
           text: data.reply || 'No response from AI',
         },
       ]);
+
+      if (data.taskActionPerformed) {
+        void loadTasks(true);
+      }
     } catch (error) {
       console.error(error);
 
@@ -656,10 +659,44 @@ const MeetingPage = () => {
 
         <section className="meeting-content">
           <article className="meeting-chat-card">
-            <header className="meeting-card__header">
+            <header className="meeting-card__header meeting-card__header--with-action">
               <h2>
                 Chat with <span>Mingo</span>
               </h2>
+              <div className="mingo-help">
+                <button type="button" className="mingo-help__btn" aria-label="What can Mingo do?">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                    <circle cx="12" cy="17" r="0.5" fill="currentColor" />
+                  </svg>
+                </button>
+                <div className="mingo-help__tooltip" role="tooltip">
+                  <strong>What Mingo can do</strong>
+                  <ul>
+                    <li>
+                      <span className="mingo-help__icon">✅</span>
+                      <span><b>Tasks</b> — create, close, reopen, rename, assign, or delete GitHub issues<br /><em>e.g. "Create a task to fix the login bug"</em></span>
+                    </li>
+                    <li>
+                      <span className="mingo-help__icon">📄</span>
+                      <span><b>Transcript</b> — answer questions based on the uploaded MP3 transcription</span>
+                    </li>
+                    <li>
+                      <span className="mingo-help__icon">🔍</span>
+                      <span><b>Repo &amp; issues</b> — ask about open issues, assignees, or status in your linked repo</span>
+                    </li>
+                    <li>
+                      <span className="mingo-help__icon">📋</span>
+                      <span><b>Meeting context</b> — recap decisions, action items, and participants</span>
+                    </li>
+                    <li>
+                      <span className="mingo-help__icon">🕘</span>
+                      <span><b>Past meetings</b> — reference previous meetings for comparison or follow-ups</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
             </header>
 
             <div className="meeting-chat-card__body">
@@ -814,8 +851,21 @@ const MeetingPage = () => {
             )}
 
             <article className="meeting-card">
-              <header className="meeting-card__header">
+              <header className="meeting-card__header meeting-card__header--with-action">
                 <h2>Tasks</h2>
+                <button
+                  type="button"
+                  className={`meeting-transcript-btn meeting-transcript-btn--edit meeting-tasks-refresh${isRefreshingTasks ? ' meeting-tasks-refresh--spinning' : ''}`}
+                  onClick={() => void loadTasks(false)}
+                  disabled={isRefreshingTasks}
+                  aria-label="Refresh tasks"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 4 23 10 17 10" />
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                  </svg>
+                  {isRefreshingTasks ? 'Refreshing…' : 'Refresh'}
+                </button>
               </header>
 
               <div className="meeting-tasks">
