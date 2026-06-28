@@ -1,5 +1,7 @@
 ﻿import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import Header from '../components/Header/Header';
 import StartMeetingModal from '../components/StartMeetingModal/StartMeetingModal';
 import NewFutureMeetingModal from '../components/NewFutureMeetingModal/NewFutureMeetingModal';
@@ -255,6 +257,23 @@ const formatStatNumber = (value: number | null) => (value === null ? '...' : Str
 const formatAverageDuration = (value: number | null) =>
   value === null ? '...' : `${Math.round(value)} ${Math.round(value) === 1 ? 'Minute' : 'Minutes'}`;
 
+type MonthDelta = { direction: 'up' | 'down' | 'flat'; label: string };
+
+const getMonthDelta = (current: number | null, previous: number | null): MonthDelta | null => {
+  if (current === null || previous === null) {
+    return null;
+  }
+
+  const delta = current - previous;
+  if (delta === 0) {
+    return { direction: 'flat', label: 'No change vs last month' };
+  }
+
+  return delta > 0
+    ? { direction: 'up', label: `↑ ${delta} vs last month` }
+    : { direction: 'down', label: `↓ ${Math.abs(delta)} vs last month` };
+};
+
 const getFirstName = (user?: DashboardUserResponse | null) => {
   const rawName = user?.fullname || user?.username || user?.email || '';
   const firstName = rawName.trim().split(/\s+/)[0];
@@ -349,6 +368,7 @@ const DashboardPage = () => {
   const [startingMeetingId, setStartingMeetingId] = useState('');
   const [meetingsThisMonth, setMeetingsThisMonth] = useState<number | null>(null);
   const [averageDuration, setAverageDuration] = useState<number | null>(null);
+  const [lastMonthCount, setLastMonthCount] = useState<number | null>(null);
   const [statsError, setStatsError] = useState('');
   const [recentlyUpdatedTasks, setRecentlyUpdatedTasks] = useState<DashboardTask[]>([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
@@ -368,6 +388,7 @@ const DashboardPage = () => {
   );
   const upcomingThisWeekCount = countUpcomingThisWeek(serverUpcomingMeetings);
   const firstName = getFirstName(dashboardUser);
+  const monthDelta = getMonthDelta(meetingsThisMonth, lastMonthCount);
 
   const loadDashboardUser = async () => {
     if (!currentUser?._id) {
@@ -424,15 +445,17 @@ const DashboardPage = () => {
     if (!currentUser?._id) {
       setMeetingsThisMonth(0);
       setAverageDuration(0);
+      setLastMonthCount(0);
       return;
     }
 
     try {
       setStatsError('');
 
-      const [monthResponse, durationResponse] = await Promise.all([
+      const [monthResponse, durationResponse, lastMonthResponse] = await Promise.all([
         fetchWithAuth(`/api/meetings/meetings/${currentUser._id}/this-month`),
         fetchWithAuth(`/api/meetings/meetings/${currentUser._id}/average-duration`),
+        fetchWithAuth(`/api/meetings/meetings/${currentUser._id}/last-month`),
       ]);
 
       if (!monthResponse.ok) {
@@ -445,6 +468,9 @@ const DashboardPage = () => {
 
       const monthMeetings = (await monthResponse.json()) as RawMeeting[];
       const durationData = (await durationResponse.json()) as AverageDurationResponse;
+      const lastMonthMeetings = lastMonthResponse.ok
+        ? ((await lastMonthResponse.json()) as RawMeeting[])
+        : null;
 
       setMeetingsThisMonth(Array.isArray(monthMeetings) ? monthMeetings.length : 0);
       setAverageDuration(
@@ -452,10 +478,12 @@ const DashboardPage = () => {
           ? durationData.averageDuration
           : 0,
       );
+      setLastMonthCount(Array.isArray(lastMonthMeetings) ? lastMonthMeetings.length : null);
     } catch (err) {
       setStatsError(err instanceof Error ? err.message : 'Unable to load dashboard stats.');
       setMeetingsThisMonth(0);
       setAverageDuration(0);
+      setLastMonthCount(null);
     }
   };
 
@@ -701,8 +729,18 @@ const DashboardPage = () => {
         <div className="dashboard-actions">
           <div
             className={`action-card action-card--blue ${hasActiveMeeting ? 'action-card--disabled' : ''}`}
+            role="button"
+            tabIndex={hasActiveMeeting ? -1 : 0}
+            aria-disabled={hasActiveMeeting}
             onClick={() => {
               if (!hasActiveMeeting) {
+                setShowStartMeeting(true);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (hasActiveMeeting) return;
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
                 setShowStartMeeting(true);
               }
             }}
@@ -744,7 +782,11 @@ const DashboardPage = () => {
             </div>
           </div>
 
-          <div className="action-card action-card--orange" onClick={() => setShowNewFutureMeeting(true)}>
+          <button
+            type="button"
+            className="action-card action-card--orange"
+            onClick={() => setShowNewFutureMeeting(true)}
+          >
             <div className="action-card-top">
               <div className="action-card-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -763,9 +805,13 @@ const DashboardPage = () => {
               <h3>Create New Meeting</h3>
               <p>Schedule your upcoming meeting</p>
             </div>
-          </div>
+          </button>
 
-          <div className="action-card action-card--purple" onClick={() => setShowUploadMeeting(true)}>
+          <button
+            type="button"
+            className="action-card action-card--purple"
+            onClick={() => setShowUploadMeeting(true)}
+          >
             <div className="action-card-top">
               <div className="action-card-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -785,7 +831,7 @@ const DashboardPage = () => {
               <h3>Upload Meeting</h3>
               <p>Transcribe &amp; analyze audio</p>
             </div>
-          </div>
+          </button>
         </div>
 
         {/* Stats Row */}
@@ -801,6 +847,11 @@ const DashboardPage = () => {
                 {formatStatNumber(meetingsThisMonth)}
               </span>
               <span className="stat-label">Meetings this month</span>
+              {monthDelta && (
+                <span className={`stat-delta stat-delta--${monthDelta.direction}`}>
+                  {monthDelta.label}
+                </span>
+              )}
             </div>
           </div>
           <div className="stat-card">
@@ -844,7 +895,14 @@ const DashboardPage = () => {
               )}
             </div>
             <div className="section-list">
-              {upcomingError && <p className="dashboard-empty-state">{upcomingError}</p>}
+              {upcomingError && (
+                <p className="dashboard-empty-state">
+                  {upcomingError}{' '}
+                  <button type="button" className="dashboard-retry-btn" onClick={() => void loadUpcomingMeetings()}>
+                    Try again
+                  </button>
+                </p>
+              )}
               {!upcomingError && isLoadingUpcoming && (
                 <p className="dashboard-empty-state">Loading upcoming meetings...</p>
               )}
@@ -897,7 +955,14 @@ const DashboardPage = () => {
               )}
             </div>
             <div className="section-list">
-              {tasksError && <p className="dashboard-empty-state">{tasksError}</p>}
+              {tasksError && (
+                <p className="dashboard-empty-state">
+                  {tasksError}{' '}
+                  <button type="button" className="dashboard-retry-btn" onClick={() => void loadOpenTasks()}>
+                    Try again
+                  </button>
+                </p>
+              )}
               {!tasksError && isLoadingTasks && (
                 <p className="dashboard-empty-state">Loading recently updated tasks...</p>
               )}
@@ -938,7 +1003,14 @@ const DashboardPage = () => {
             )}
           </div>
           <div className="section-list">
-            {recentError && <p className="dashboard-empty-state">{recentError}</p>}
+            {recentError && (
+              <p className="dashboard-empty-state">
+                {recentError}{' '}
+                <button type="button" className="dashboard-retry-btn" onClick={() => void loadRecentMeetings()}>
+                  Try again
+                </button>
+              </p>
+            )}
             {!recentError && isLoadingRecent && (
               <p className="dashboard-empty-state">Loading recent meetings...</p>
             )}
@@ -1094,7 +1166,11 @@ const DashboardPage = () => {
                           className={`history-chat-message history-chat-message--${message.sender}`}
                         >
                           <span>{message.sender === 'mingo' ? 'Mingo' : 'You'}</span>
-                          <p>{message.content}</p>
+                          {message.sender === 'mingo' ? (
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+                          ) : (
+                            <p>{message.content}</p>
+                          )}
                         </div>
                       ))}
                     </div>

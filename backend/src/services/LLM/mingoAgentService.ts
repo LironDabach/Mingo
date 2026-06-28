@@ -234,6 +234,14 @@ class MingoAgentService {
       return "";
     }
 
+    if (
+      typeof value === "object" &&
+      !(value instanceof Date) &&
+      "_id" in (value as Record<string, unknown>)
+    ) {
+      return String((value as Record<string, unknown>)._id);
+    }
+
     return String(value);
   }
 
@@ -1194,14 +1202,21 @@ class MingoAgentService {
   }
 
   private formatMeetingSummary(meeting: any, label: string) {
+    const organizerName = this.resolvePersonName(meeting?.organizerId);
+    const participantNames = Array.isArray(meeting?.participants)
+      ? meeting.participants
+          .map((participant: unknown) => this.resolvePersonName(participant))
+          .filter((name: string | null): name is string => Boolean(name))
+      : [];
+
     return [
       `${label}:`,
       `- Meeting ID: ${this.stringifyId(meeting?._id) || "Not available"}`,
       `- Title: ${this.summarizeContextValue(meeting?.title)}`,
       `- Date: ${this.meetingDateToIso(meeting?.date)}`,
       `- Duration: ${this.summarizeContextValue(meeting?.duration)}`,
-      `- Organizer ID: ${this.summarizeContextValue(meeting?.organizerId)}`,
-      `- Participants: ${this.summarizeContextValue(meeting?.participants)}`,
+      `- Organizer: ${organizerName || this.summarizeContextValue(meeting?.organizerId)}`,
+      `- Participants: ${participantNames.length ? participantNames.join(", ") : this.summarizeContextValue(meeting?.participants)}`,
       `- Transcript ID: ${this.summarizeContextValue(meeting?.transcriptId)}`,
       `- Tasks: ${this.summarizeContextValue(meeting?.tasks)}`,
     ].join("\n");
@@ -1568,7 +1583,6 @@ class MingoAgentService {
       : [];
 
     return [
-      "You are Mingo, an AI assistant for meeting management.",
       "You are Mingo, the AI assistant of a meeting-management system.",
       "Answer the user's question using the meeting context below.",
       "Keep the answer clear, practical, and concise.",
@@ -1656,10 +1670,13 @@ class MingoAgentService {
     const meetingQuery = this.meetings.findById(meetingId);
     const populatedMeetingQuery =
       meetingQuery && typeof meetingQuery.populate === "function"
-        ? meetingQuery.populate({
-            path: "tasks",
-            populate: { path: "assigneeId", select: "fullname email username" },
-          })
+        ? meetingQuery
+            .populate({
+              path: "tasks",
+              populate: { path: "assigneeId", select: "fullname email username" },
+            })
+            .populate("participants", "fullname email username")
+            .populate("organizerId", "fullname email username")
         : meetingQuery;
     const meeting =
       populatedMeetingQuery && typeof populatedMeetingQuery.lean === "function"
@@ -1671,6 +1688,19 @@ class MingoAgentService {
     }
 
     return meeting;
+  }
+
+  private resolvePersonName(value: unknown) {
+    if (!value || typeof value !== "object") {
+      return null;
+    }
+
+    const record = value as Record<string, unknown>;
+    const fullname = typeof record.fullname === "string" ? record.fullname.trim() : "";
+    const username = typeof record.username === "string" ? record.username.trim() : "";
+    const email = typeof record.email === "string" ? record.email.trim() : "";
+
+    return fullname || username || email || null;
   }
 
   private async getMeetingForReplyOrThrow(meetingId: string, userId?: string) {
@@ -1711,7 +1741,7 @@ class MingoAgentService {
       !existingMeeting.mingoAgentId ||
       String(existingMeeting.mingoAgentId) !== String(chatId)
     ) {
-      (existingMeeting as any).mingoAgentID = chatId;
+      existingMeeting.mingoAgentId = chatId;
       await existingMeeting.save();
     }
 
@@ -1895,8 +1925,15 @@ class MingoAgentService {
             : "Not available"
       }`,
       `Duration: ${this.summarizeContextValue(meeting?.duration)}`,
-      `Organizer ID: ${this.summarizeContextValue(meeting?.organizerId)}`,
-      `Participants: ${this.summarizeContextValue(meeting?.participants)}`,
+      `Organizer: ${this.resolvePersonName(meeting?.organizerId) || this.summarizeContextValue(meeting?.organizerId)}`,
+      `Participants: ${
+        Array.isArray(meeting?.participants) && meeting.participants.length
+          ? meeting.participants
+              .map((participant: unknown) => this.resolvePersonName(participant))
+              .filter((name: string | null): name is string => Boolean(name))
+              .join(", ") || this.summarizeContextValue(meeting?.participants)
+          : this.summarizeContextValue(meeting?.participants)
+      }`,
       `Transcript ID: ${this.summarizeContextValue(meeting?.transcriptId)}`,
       `Tasks: ${this.summarizeContextValue(meeting?.tasks)}`,
       "",

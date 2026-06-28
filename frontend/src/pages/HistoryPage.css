@@ -485,10 +485,30 @@
 }
 
 .history-chat-message p {
-  margin: 0;
+  margin: 0 0 4px;
   font-size: 13px;
   line-height: 1.45;
   color: #334155;
+}
+
+.history-chat-message p:last-child {
+  margin-bottom: 0;
+}
+
+.history-chat-message ul,
+.history-chat-message ol {
+  margin: 2px 0 4px;
+  padding-left: 18px;
+  font-size: 13px;
+  color: #334155;
+}
+
+.history-chat-message code {
+  background: rgba(79, 70, 229, 0.1);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
 }
 
 /* ── Summary Modal ──────────────────────────────────────────── */

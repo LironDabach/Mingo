@@ -2,7 +2,7 @@ import { Response } from "express";
 import mingoAgentModel from "../models/mingoAgentModel";
 import { AuthRequest } from "../middleware/authMiddleware";
 import baseController from "./baseController";
-import mingoAgentService from "../services/LLM/mingoAgentService";
+import mingoAgentService, { MingoAgentError } from "../services/LLM/mingoAgentService";
 
 class mingoAgentController extends baseController {
   constructor() {
@@ -48,6 +48,9 @@ class mingoAgentController extends baseController {
       );
       res.json({ reply: result.reply, taskActionPerformed: result.taskActionPerformed });
     } catch (err) {
+      if (err instanceof MingoAgentError) {
+        return res.status(err.statusCode).json({ error: err.message });
+      }
       console.error(err);
       res.status(500).send("Error: Can't generate reply for the meeting");
     }
@@ -65,6 +68,9 @@ class mingoAgentController extends baseController {
       const result = await mingoAgentService.generateSummary(meetingId);
       res.json({ summary: result.summary });
     } catch (err) {
+      if (err instanceof MingoAgentError) {
+        return res.status(err.statusCode).json({ error: err.message });
+      }
       console.error(err);
       res.status(500).send("Error: Can't generate summary for the meeting");
     }

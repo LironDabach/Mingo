@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
-import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import Header from '../components/Header/Header';
 import { fetchWithAuth, getStoredUser } from '../lib/auth';
 import './MeetingPage.css';
@@ -71,14 +72,6 @@ const formatMeetingDate = (value?: string) => {
   }).format(date);
 };
 
-const buildMeetingNarrative = (
-  title: string,
-  repo: string,
-  attendeeCount: number,
-  openTaskCount: number,
-) =>
-  `${title} focused on aligning the team around ${repo}. The discussion covered product direction, design follow-ups, and the next engineering steps. ${attendeeCount} participants took part in the meeting, and the conversation ended with ${openTaskCount} action items that still need follow-up.`;
-
 const MeetingPage = () => {
   const navigate = useNavigate();
   const storedUser = getStoredUser();
@@ -104,11 +97,17 @@ const MeetingPage = () => {
 
   const [actualDuration, setActualDuration] = useState('');
   const [meetingDetails, setMeetingDetails] = useState<MeetingDetails | null>(null);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editableTitle, setEditableTitle] = useState('');
+  const [isSavingTitle, setIsSavingTitle] = useState(false);
+  const [titleSaveError, setTitleSaveError] = useState('');
   const meetingTitle = meetingDetails?.title || parsedDraft?.title || 'Live Meeting';
   const repositoryLabel = meetingDetails?.gitHubRepoName || parsedDraft?.gitHubRepoName || '';
   const meetingDate = formatMeetingDate(meetingDetails?.date || parsedDraft?.date);
 
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MINGO_MESSAGE]);
+  const chatBottomRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const loadMeetingDetails = async () => {
@@ -232,6 +231,54 @@ const MeetingPage = () => {
     }
   };
 
+  const handleStartEditingTitle = () => {
+    setEditableTitle(meetingTitle);
+    setTitleSaveError('');
+    setIsEditingTitle(true);
+  };
+
+  const handleCancelEditingTitle = () => {
+    setIsEditingTitle(false);
+    setTitleSaveError('');
+  };
+
+  const handleSaveTitle = async () => {
+    const trimmedTitle = editableTitle.trim();
+    if (!trimmedTitle || isSavingTitle) return;
+
+    const meetingId =
+      meetingIdRef.current ||
+      parsedDraft?.id ||
+      localStorage.getItem('currentMeetingId') ||
+      '';
+
+    if (!meetingId) {
+      setTitleSaveError('No meeting is currently active.');
+      return;
+    }
+
+    setIsSavingTitle(true);
+    setTitleSaveError('');
+
+    try {
+      const response = await fetchWithAuth(`/api/meetings/meetings/${meetingId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ title: trimmedTitle }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Unable to save the meeting title.');
+      }
+
+      setMeetingDetails((prev) => (prev ? { ...prev, title: trimmedTitle } : { _id: meetingId, title: trimmedTitle }));
+      setIsEditingTitle(false);
+    } catch (err) {
+      setTitleSaveError(err instanceof Error ? err.message : 'Unable to save the meeting title.');
+    } finally {
+      setIsSavingTitle(false);
+    }
+  };
+
   const toggleSuggestedTaskIndex = (index: number) => {
     setSelectedSuggestedTaskIndices((prev) => {
       const next = new Set(prev);
@@ -275,6 +322,20 @@ const MeetingPage = () => {
   const [isMingoTyping, setIsMingoTyping] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [showSummary, setShowSummary] = useState(false);
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
+
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isMingoTyping]);
+
+  useEffect(() => {
+    if (!showEndConfirm) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowEndConfirm(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showEndConfirm]);
 
   useEffect(() => {
     document.body.style.overflow = showSummary ? 'hidden' : '';
@@ -289,6 +350,7 @@ const MeetingPage = () => {
   const [emailError, setEmailError] = useState('');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [taskUpdateError, setTaskUpdateError] = useState('');
+  const [lastFailedTaskId, setLastFailedTaskId] = useState('');
   const [isRefreshingTasks, setIsRefreshingTasks] = useState(false);
 
   const loadTasks = async (silent = false) => {
@@ -348,19 +410,17 @@ const MeetingPage = () => {
   const completedTasks = tasks.filter((task) => task.done);
   const openTasks = tasks.filter((task) => !task.done);
   const displayedTasks = [...openTasks, ...completedTasks];
-  const summaryNarrative = buildMeetingNarrative(
-    meetingTitle,
-    repositoryLabel,
-    attendees.length,
-    openTasks.length,
-  );
 
 
-  const handleSend = async (event: FormEvent) => {
+  const handleSend = async (event: { preventDefault: () => void }) => {
     event.preventDefault();
 
     const trimmed = chatInput.trim();
     if (!trimmed) return;
+
+    if (chatInputRef.current) {
+      chatInputRef.current.style.height = 'auto';
+    }
 
     const meetingId =
       meetingIdRef.current ||
@@ -390,7 +450,12 @@ const MeetingPage = () => {
       );
 
       if (!response.ok) {
-        throw new Error('Failed to get response from server');
+        const errorBody = await response.json().catch(() => null);
+        const serverMessage =
+          errorBody && typeof errorBody === 'object' && typeof errorBody.error === 'string'
+            ? errorBody.error
+            : '';
+        throw new Error(serverMessage || 'Failed to get response from server');
       }
 
       const data = await response.json();
@@ -415,7 +480,10 @@ const MeetingPage = () => {
         {
           id: Date.now(),
           sender: 'mingo',
-          text: 'Something went wrong. Please try again.',
+          text:
+            error instanceof Error && error.message
+              ? error.message
+              : 'Something went wrong. Please try again.',
         },
       ]);
     } finally {
@@ -430,7 +498,6 @@ const MeetingPage = () => {
       localStorage.getItem('currentMeetingId') ||
       localStorage.getItem('lastSummaryMeetingId') ||
       '';
-    const fallbackSummary = summaryNarrative;
 
     if (meetingId) {
       meetingIdRef.current = meetingId;
@@ -440,27 +507,39 @@ const MeetingPage = () => {
     setEmailSent(false);
     setEmailError('');
     setSummaryMeetingId(meetingId);
-    setSummaryText(fallbackSummary);
+    setSummaryText('');
     setSummaryError('');
 
     if (!meetingId) {
+      setSummaryError("Summary couldn't be generated — no meeting was found.");
       localStorage.removeItem('currentMeetingDraft');
       localStorage.removeItem('currentMeetingId');
       return;
     }
 
+    await generateAndSaveSummary(meetingId);
+  };
+
+  const generateAndSaveSummary = async (meetingId: string) => {
     try {
       setSummaryLoading(true);
+      setSummaryError('');
       const summaryResponse = await fetchWithAuth(`/api/meetings/${meetingId}/mingoAgent/generateSummary`);
-      let generatedSummary = fallbackSummary;
 
-      if (summaryResponse.ok) {
-        const data = (await summaryResponse.json()) as { summary?: string };
-        generatedSummary = data.summary || fallbackSummary;
-        setSummaryText(generatedSummary);
-      } else {
-        setSummaryError('The meeting ended, but the server summary could not be generated right now.');
+      if (!summaryResponse.ok) {
+        setSummaryError("Summary couldn't be generated — try again.");
+        return;
       }
+
+      const data = (await summaryResponse.json()) as { summary?: string };
+      const generatedSummary = (data.summary || '').trim();
+
+      if (!generatedSummary) {
+        setSummaryError("Summary couldn't be generated — try again.");
+        return;
+      }
+
+      setSummaryText(generatedSummary);
 
       const startedAt = parsedDraft?.date ? new Date(parsedDraft.date).getTime() : Date.now();
       const duration = Math.max(1, Math.round((Date.now() - startedAt) / 60000));
@@ -479,13 +558,24 @@ const MeetingPage = () => {
       setSummaryError(
         err instanceof Error
           ? err.message
-          : 'The meeting ended, but the server summary could not be saved right now.',
+          : "Summary couldn't be generated — try again.",
       );
     } finally {
       setSummaryLoading(false);
       localStorage.removeItem('currentMeetingDraft');
       localStorage.removeItem('currentMeetingId');
     }
+  };
+
+  const handleRetrySummary = () => {
+    const meetingId =
+      summaryMeetingId ||
+      meetingIdRef.current ||
+      parsedDraft?.id ||
+      localStorage.getItem('lastSummaryMeetingId') ||
+      '';
+    if (!meetingId) return;
+    void generateAndSaveSummary(meetingId);
   };
 
   const handleSendSummaryEmail = async () => {
@@ -502,13 +592,18 @@ const MeetingPage = () => {
       return;
     }
 
+    if (!summaryText.trim()) {
+      setEmailError('No summary is available to send yet.');
+      return;
+    }
+
     try {
       setEmailSending(true);
       setEmailError('');
       const response = await fetchWithAuth(`/api/meetings/meetings/${meetingId}/send-summary-email`, {
         method: 'POST',
         body: JSON.stringify({
-          summary: summaryText || summaryNarrative,
+          summary: summaryText,
           closedTasks: completedTasks.map((task) => `${task.title} (${task.assignee}, ${task.tag})`),
           openTasks: openTasks.map((task) => `${task.title} (${task.assignee}, ${task.due})`),
         }),
@@ -539,6 +634,7 @@ const MeetingPage = () => {
     const nextDone = !task.done;
     const previousTasks = tasks;
     setTaskUpdateError('');
+    setLastFailedTaskId('');
     setTasks((prev) => {
       const updatedTask = { ...task, done: nextDone };
       const rest = prev.filter((currentTask) => currentTask.id !== taskId);
@@ -584,6 +680,7 @@ const MeetingPage = () => {
       }
     } catch (error) {
       setTasks(previousTasks);
+      setLastFailedTaskId(taskId);
       setTaskUpdateError(error instanceof Error ? error.message : 'Unable to update task status.');
     }
   };
@@ -596,14 +693,59 @@ const MeetingPage = () => {
         <section className="meeting-hero">
           <div className="meeting-hero__content">
             <div className="meeting-hero__headline">
-              <h1>{meetingTitle}</h1>
-              <button type="button" className="meeting-hero__edit" aria-label="Edit meeting">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 20h9" />
-                  <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" />
-                </svg>
-              </button>
+              {isEditingTitle ? (
+                <div className="meeting-hero__title-edit">
+                  <input
+                    type="text"
+                    className="meeting-hero__title-input"
+                    value={editableTitle}
+                    onChange={(event) => setEditableTitle(event.target.value)}
+                    autoFocus
+                    disabled={isSavingTitle}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        void handleSaveTitle();
+                      } else if (event.key === 'Escape') {
+                        handleCancelEditingTitle();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="meeting-hero__title-save"
+                    onClick={() => void handleSaveTitle()}
+                    disabled={isSavingTitle || !editableTitle.trim()}
+                  >
+                    {isSavingTitle ? 'Saving…' : 'Save'}
+                  </button>
+                  <button
+                    type="button"
+                    className="meeting-hero__title-cancel"
+                    onClick={handleCancelEditingTitle}
+                    disabled={isSavingTitle}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <h1>{meetingTitle}</h1>
+                  <button
+                    type="button"
+                    className="meeting-hero__edit"
+                    aria-label="Edit meeting title"
+                    onClick={handleStartEditingTitle}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 20h9" />
+                      <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" />
+                    </svg>
+                  </button>
+                </>
+              )}
             </div>
+            {titleSaveError && <p className="meeting-hero__title-error">{titleSaveError}</p>}
 
             <div className="meeting-hero__meta">
               <span>
@@ -647,7 +789,7 @@ const MeetingPage = () => {
           </div>
 
           <div className="meeting-hero__actions">
-            <button type="button" className="meeting-hero__end" onClick={handleEndMeeting}>
+            <button type="button" className="meeting-hero__end" onClick={() => setShowEndConfirm(true)}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="6" y="5" width="4" height="14" rx="1" />
                 <rect x="14" y="5" width="4" height="14" rx="1" />
@@ -712,7 +854,13 @@ const MeetingPage = () => {
                       </svg>
                     </div>
                   )}
-                  <div className="meeting-message__bubble">{message.text}</div>
+                  <div className="meeting-message__bubble">
+                    {message.sender === 'mingo' ? (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown>
+                    ) : (
+                      message.text
+                    )}
+                  </div>
                   {message.sender === 'mingo' && (
                     <div className="meeting-message__avatar meeting-message__avatar--mingo">
                       <svg viewBox="0 0 24 24" fill="currentColor">
@@ -736,14 +884,27 @@ const MeetingPage = () => {
                   </div>
                 </div>
               )}
+              <div ref={chatBottomRef} />
             </div>
 
             <form className="meeting-chat-card__input" onSubmit={handleSend}>
-              <input
-                type="text"
+              <textarea
+                ref={chatInputRef}
+                rows={1}
                 placeholder="Ask anything"
                 value={chatInput}
-                onChange={(event) => setChatInput(event.target.value)}
+                onChange={(event) => {
+                  setChatInput(event.target.value);
+                  const el = event.target;
+                  el.style.height = 'auto';
+                  el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    void handleSend(event);
+                  }
+                }}
               />
               <button type="submit" aria-label="Send message">
                 <svg viewBox="0 0 24 24" fill="currentColor">
@@ -869,7 +1030,20 @@ const MeetingPage = () => {
               </header>
 
               <div className="meeting-tasks">
-                {taskUpdateError && <p className="meeting-tasks-error">{taskUpdateError}</p>}
+                {taskUpdateError && (
+                  <p className="meeting-tasks-error">
+                    {taskUpdateError}{' '}
+                    {lastFailedTaskId && (
+                      <button
+                        type="button"
+                        className="meeting-retry-btn"
+                        onClick={() => void toggleTask(lastFailedTaskId)}
+                      >
+                        Retry
+                      </button>
+                    )}
+                  </p>
+                )}
                 {displayedTasks.length > 0 ? (
                   displayedTasks.map((task) => (
                     <div key={task.id} className={`meeting-task-row${task.done ? ' meeting-task-row--done' : ''}`}>
@@ -970,9 +1144,14 @@ const MeetingPage = () => {
               {summaryLoading ? (
                 <p>Generating summary...</p>
               ) : summaryError ? (
-                <p>{summaryError}</p>
+                <div className="meeting-summary__error-block">
+                  <p>{summaryError}</p>
+                  <button type="button" className="meeting-summary__retry-btn" onClick={handleRetrySummary}>
+                    Retry
+                  </button>
+                </div>
               ) : (
-                <p>{summaryText || summaryNarrative}</p>
+                <p>{summaryText}</p>
               )}
             </article>
 
@@ -1031,7 +1210,7 @@ const MeetingPage = () => {
                 type="button"
                 className={`meeting-summary-modal__mail ${emailSent ? 'meeting-summary-modal__mail--sent' : ''}`}
                 onClick={handleSendSummaryEmail}
-                disabled={emailSent || emailSending || summaryLoading}
+                disabled={emailSent || emailSending || summaryLoading || !summaryText.trim()}
               >
                 {emailSending ? 'Sending...' : emailSent ? 'Summary Sent' : 'Send by Email'}
               </button>
@@ -1041,6 +1220,41 @@ const MeetingPage = () => {
                 onClick={() => navigate('/dashboard')}
               >
                 Back to Home
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEndConfirm && (
+        <div className="meeting-summary-modal__overlay" onClick={() => setShowEndConfirm(false)}>
+          <div
+            className="meeting-end-confirm-modal"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <h2 className="meeting-end-confirm-modal__title">End this meeting?</h2>
+            <p className="meeting-end-confirm-modal__body">
+              Mingo will generate the summary and you can't reopen it.
+            </p>
+            <div className="meeting-end-confirm-modal__actions">
+              <button
+                type="button"
+                className="meeting-end-confirm-modal__cancel"
+                onClick={() => setShowEndConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="meeting-end-confirm-modal__confirm"
+                onClick={() => {
+                  setShowEndConfirm(false);
+                  void handleEndMeeting();
+                }}
+              >
+                End meeting
               </button>
             </div>
           </div>

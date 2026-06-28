@@ -79,6 +79,15 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  border: none;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+}
+
+.action-card:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
 }
 
 .action-card::after {
@@ -254,6 +263,25 @@
   font-weight: 500;
 }
 
+.stat-delta {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.stat-delta--up {
+  color: #16a34a;
+}
+
+.stat-delta--down {
+  color: #64748b;
+}
+
+.stat-delta--flat {
+  color: #94a3b8;
+}
+
 /* ── Bottom Sections ───────────────────────────────────────── */
 .dashboard-bottom {
   display: grid;
@@ -317,6 +345,21 @@
   font-size: 13px;
   text-align: center;
   padding: 20px 0;
+}
+
+.dashboard-retry-btn {
+  border: none;
+  background: none;
+  color: #4f46e5;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.dashboard-retry-btn:hover {
+  color: #4338ca;
 }
 
 .section-list {
