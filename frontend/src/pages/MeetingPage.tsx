@@ -924,13 +924,7 @@ const MeetingPage = () => {
                   <>
                     <div className="meeting-suggested-tasks">
                       {suggestedTasks.map((task, i) => (
-                        <label key={i} className="meeting-suggested-task-item">
-                          <input
-                            type="checkbox"
-                            checked={selectedSuggestedTaskIndices.has(i)}
-                            onChange={() => toggleSuggestedTaskIndex(i)}
-                            disabled={suggestedTasksCreated}
-                          />
+                        <div key={i} className="meeting-suggested-task-item">
                           <div className="meeting-suggested-task-text">
                             <div className="meeting-suggested-task-title-row">
                               <strong>{task.title}</strong>
@@ -938,27 +932,8 @@ const MeetingPage = () => {
                             </div>
                             {task.description && <span>{task.description}</span>}
                           </div>
-                        </label>
+                        </div>
                       ))}
-                    </div>
-                    <div className="meeting-suggested-task-footer">
-                      {suggestedTasksCreated ? (
-                        <span className="meeting-suggested-tasks-done">✓ Tasks created</span>
-                      ) : (
-                        <button
-                          type="button"
-                          className="meeting-suggested-task-btn"
-                          onClick={() => void handleCreateSuggestedTasks()}
-                          disabled={selectedSuggestedTaskIndices.size === 0 || isCreatingSuggestedTasks}
-                        >
-                          {isCreatingSuggestedTasks
-                            ? 'Creating…'
-                            : `Create ${selectedSuggestedTaskIndices.size} Task${selectedSuggestedTaskIndices.size !== 1 ? 's' : ''}`}
-                        </button>
-                      )}
-                      {suggestedTasksError && (
-                        <p className="meeting-suggested-tasks-error">{suggestedTasksError}</p>
-                      )}
                     </div>
                   </>
                 )}
