@@ -8,6 +8,11 @@ const Header = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
+    localStorage.removeItem('currentMeetingId');
+    localStorage.removeItem('currentMeetingDraft');
+    localStorage.removeItem('lastSummaryMeetingId');
+    localStorage.removeItem('uploadedTranscript');
+    localStorage.removeItem('uploadedSuggestedTasks');
     navigate('/login');
   };
 

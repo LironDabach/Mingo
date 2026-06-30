@@ -69,9 +69,13 @@ const initApp = () => {
     db.on("error", (error) => console.error("Mongo connection error:", error));
     db.once("open", () => {
       console.log("Connected to Database");
-      // Drop stale non-sparse index so Mongoose recreates it with sparse:true
+      // Drop stale single-field index; compound index (gitHubIssueId+gitHubRepoName) is recreated by Mongoose
       db.collection("tasks")
         .dropIndex("gitHubIssueId_1")
+        .catch(() => { /* already dropped or doesn't exist — ignore */ });
+      // Drop stale unique index on fullname (fullname is not unique across users)
+      db.collection("users")
+        .dropIndex("fullname_1")
         .catch(() => { /* already dropped or doesn't exist — ignore */ });
     });
   });

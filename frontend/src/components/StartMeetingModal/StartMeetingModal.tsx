@@ -196,11 +196,6 @@ const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
       return;
     }
 
-    if (attendeeEmails.length === 0) {
-      setError('Please add at least one attendee before creating the meeting.');
-      return;
-    }
-
     setIsSubmitting(true);
     setError('');
 
@@ -296,7 +291,10 @@ const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
 
           <div className="start-meeting-column">
             <div className="start-meeting-field">
-              <h3 className="modal-column-title">Attendees</h3>
+              <h3 className="modal-column-title">
+                Attendees
+                <span className="upload-optional-badge">optional</span>
+              </h3>
               <div className="attendees-search start-meeting-attendees-search">
                 <input
                   type="email"
@@ -346,7 +344,7 @@ const StartMeetingModal = ({ onClose }: StartMeetingModalProps) => {
           className="modal-create-btn"
           type="button"
           onClick={handleCreateMeeting}
-          disabled={isSubmitting || !title.trim() || !repository.trim() || (attendees.length === 0 && !emailInput.trim())}
+          disabled={isSubmitting || !title.trim() || !repository.trim()}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="12" y1="5" x2="12" y2="19" />

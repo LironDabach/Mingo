@@ -35,8 +35,6 @@ const taskSchema = new mongoose.Schema({
   gitHubIssueId: {
     type: Number,
     required: false,
-    unique: true,
-    sparse: true,
   },
 
   gitHubRepoName: {
@@ -50,6 +48,25 @@ const taskSchema = new mongoose.Schema({
     ref: "user",
     required: false,
   },
+
+  createdInMeetingId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "meeting",
+    required: false,
+  },
+
+  completedInMeetingId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "meeting",
+    required: false,
+  },
+
+  completedAt: {
+    type: Date,
+    required: false,
+  },
 }, { timestamps: true });
+
+taskSchema.index({ gitHubIssueId: 1, gitHubRepoName: 1 }, { unique: true, sparse: true });
 
 export default mongoose.model("task", taskSchema);

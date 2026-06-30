@@ -17,7 +17,7 @@ type DashboardMeeting = {
   dateLabel: string;
   timeLabel: string;
   duration: string;
-  recordingDuration?: string;
+  recordingDuration?: string | undefined;
   status: 'Completed' | 'Upcoming' | 'Live';
   summary: string;
   repoTag: string;

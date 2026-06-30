@@ -300,6 +300,7 @@ class meetingsController extends baseController {
       const meetings = await this.model
         .find(this.buildUserMeetingsFilter(userId))
         .populate("participants", "fullname email username")
+        .populate("tasks", "status")
         .sort({ date: -1 });
 
       return res.json(meetings);
@@ -561,11 +562,6 @@ class meetingsController extends baseController {
       !req.body.gitHubRepoName.trim()
     ) {
       res.status(400).json({ error: "GitHub repository is required" });
-      return;
-    }
-
-    if (attendeeEmails.length === 0 && participantIds.length === 0) {
-      res.status(400).json({ error: "At least one attendee is required" });
       return;
     }
 

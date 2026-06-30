@@ -1,6 +1,7 @@
 import mingoAgentModel from "../../models/mingoAgentModel";
 import meetingsModel from "../../models/meetingsModel";
 import tasksModel from "../../models/tasksModel";
+import transcriptModel from "../../models/transcriptModel";
 import usersModel from "../../models/usersModel";
 import llmService, { LlmService } from "./llmService";
 
@@ -27,6 +28,7 @@ type AgentReply = {
   reply: string;
   messages: ChatMessage[];
   taskActionPerformed: boolean;
+  suggestedTask?: { title: string; description: string };
 };
 
 type TaskAction =
@@ -37,7 +39,7 @@ type TaskAction =
   | { type: "rename"; issueNumber: number; title: string }
   | { type: "delete"; issueNumber: number };
 
-type TaskActionResult = { success: boolean; description: string };
+type TaskActionResult = { success: boolean; description: string; suggestedTask?: { title: string; description: string } };
 
 type RetrievalScope =
   | "current_meeting"
@@ -1041,35 +1043,10 @@ class MingoAgentService {
     const repoFullName = await this.resolveRepoFullName(authorization, repoName);
 
     if (action.type === "create") {
-      const issue = await this.createGitHubIssue(
-        authorization,
-        repoFullName,
-        action.title,
-        action.description,
-      );
-      if (!issue) {
-        return { success: false, description: `Failed to create issue in ${repoFullName}.` };
-      }
-      // Also persist locally so the meeting task list picks it up.
-      try {
-        const task = await this.tasks.create({
-          title: action.title,
-          description: action.description,
-          status: "To Do",
-          gitHubIssueId: issue.number,
-          gitHubRepoName: repoFullName,
-          gitHubRepoOwner: userId,
-        });
-        if (Array.isArray(meeting.tasks)) {
-          meeting.tasks.push(task._id);
-          await this.meetings.findByIdAndUpdate(meeting._id, { $push: { tasks: task._id } });
-        }
-      } catch {
-        // Local persistence is best-effort; the GitHub issue was created successfully.
-      }
       return {
         success: true,
-        description: `Created GitHub issue #${issue.number} "${action.title}" in ${repoFullName}.${issue.html_url ? ` URL: ${issue.html_url}` : ""}`,
+        description: `Added "${action.title}" to the Suggested Tasks list. The user will review and decide whether to create it in GitHub.`,
+        suggestedTask: { title: action.title, description: action.description },
       };
     }
 
@@ -1711,7 +1688,7 @@ class MingoAgentService {
       !existingMeeting.mingoAgentId ||
       String(existingMeeting.mingoAgentId) !== String(chatId)
     ) {
-      (existingMeeting as any).mingoAgentID = chatId;
+      (existingMeeting as any).mingoAgentId = chatId;
       await existingMeeting.save();
     }
 
@@ -1843,7 +1820,8 @@ class MingoAgentService {
       chat,
       reply,
       messages: updatedMessages,
-      taskActionPerformed: Boolean(actionResult?.success),
+      taskActionPerformed: Boolean(actionResult?.success) && !actionResult?.suggestedTask,
+      ...(actionResult?.suggestedTask ? { suggestedTask: actionResult.suggestedTask } : {}),
     };
   }
 
@@ -1870,6 +1848,25 @@ class MingoAgentService {
       // Chat is optional — proceed without it if unavailable.
     }
 
+    // Load the actual transcript text if this meeting has one
+    let transcriptText = "";
+    if (meeting?.transcriptId) {
+      try {
+        const transcriptDoc = await transcriptModel
+          .findById(meeting.transcriptId)
+          .lean();
+        if (transcriptDoc && (transcriptDoc as any).content) {
+          transcriptText = String((transcriptDoc as any).content).trim();
+        }
+      } catch {
+        // Proceed without transcript if unavailable
+      }
+    }
+
+    const transcriptSection = transcriptText
+      ? ["", "Meeting transcript:", transcriptText].join("\n")
+      : "";
+
     const chatSection =
       chatHistory.length > 0
         ? [
@@ -1879,42 +1876,34 @@ class MingoAgentService {
           ].join("\n")
         : "";
 
+    const hasContent = transcriptText || chatHistory.length > 0;
+
     const summaryPrompt = [
-      "You are Mingo, an AI assistant for meeting management.",
-      "Generate a concise summary of the key points, decisions, and action items from the meeting based on the following context.",
-      "If live chat history is provided, incorporate the topics and insights discussed there into the summary.",
-      "Use only the provided meeting data as facts. Do not invent details that are not present in the context.",
+      "You are Mingo, an AI meeting assistant.",
+      "Write a clear, well-structured summary of the meeting below.",
+      "The summary should cover: what was discussed, key decisions made, and action items.",
+      "Write in flowing paragraphs — not bullet points. Be specific and use details from the content.",
+      "Do not invent anything that isn't in the provided content.",
       "",
-      "Meeting context summary:",
-      `Title: ${this.summarizeContextValue(meeting?.title)}`,
-      `Date: ${
-        meeting?.date instanceof Date
-          ? meeting.date.toISOString()
-          : meeting?.date
-            ? new Date(meeting.date).toISOString()
-            : "Not available"
-      }`,
-      `Duration: ${this.summarizeContextValue(meeting?.duration)}`,
-      `Organizer ID: ${this.summarizeContextValue(meeting?.organizerId)}`,
-      `Participants: ${this.summarizeContextValue(meeting?.participants)}`,
-      `Transcript ID: ${this.summarizeContextValue(meeting?.transcriptId)}`,
-      `Tasks: ${this.summarizeContextValue(meeting?.tasks)}`,
-      "",
-      "Meeting context JSON:",
-      this.formatContextAsJson(meeting),
+      `Meeting title: ${meeting?.title || "Untitled"}`,
+      `Date: ${meeting?.date ? new Date(meeting.date).toLocaleDateString("en-GB") : "Unknown"}`,
+      hasContent ? "" : "Note: No transcript or chat content available for this meeting.",
+      transcriptSection,
       chatSection,
       "",
-      "Summary as Mingo:",
-    ].join("\n");
+      "Summary:",
+    ]
+      .filter((line) => line !== null && line !== undefined)
+      .join("\n");
 
     let summary = "";
     try {
       const response = await this.runLlmGenerate({
         prompt: summaryPrompt,
         options: {
-          temperature: 0.2,
+          temperature: 0.4,
           top_p: 0.9,
-          num_predict: 400,
+          num_predict: 900,
         },
       });
 

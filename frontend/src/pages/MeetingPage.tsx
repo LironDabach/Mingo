@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header/Header';
 import { fetchWithAuth, getStoredUser } from '../lib/auth';
+import { notifyTasksChanged } from '../lib/taskEvents';
 import './MeetingPage.css';
 import { useEffect } from 'react';
 
@@ -33,7 +34,7 @@ type ChatMessage = {
   text: string;
 };
 
-type SuggestedTask = { title: string; description: string };
+type SuggestedTask = { title: string; description: string; isNew?: boolean };
 
 type Task = {
   id: string;
@@ -83,7 +84,9 @@ const MeetingPage = () => {
   const navigate = useNavigate();
   const storedUser = getStoredUser();
   const rawDraft = localStorage.getItem('currentMeetingDraft');
-  const parsedDraft = rawDraft ? (JSON.parse(rawDraft) as MeetingDraft) : null;
+  const parsedDraft = (() => {
+    try { return rawDraft ? (JSON.parse(rawDraft) as MeetingDraft) : null; } catch { return null; }
+  })();
   const initialMeetingId =
     parsedDraft?.id ||
     localStorage.getItem('currentMeetingId') ||
@@ -185,33 +188,68 @@ const MeetingPage = () => {
   // ── Suggested tasks (from upload modal) ─────────────────────
   const [suggestedTasks, setSuggestedTasks] = useState<SuggestedTask[]>([]);
   const [selectedSuggestedTaskIndices, setSelectedSuggestedTaskIndices] = useState<Set<number>>(new Set());
+  const [isSuggestingTasks, setIsSuggestingTasks] = useState(false);
   const [isCreatingSuggestedTasks, setIsCreatingSuggestedTasks] = useState(false);
   const [suggestedTasksCreated, setSuggestedTasksCreated] = useState(false);
   const [suggestedTasksError, setSuggestedTasksError] = useState('');
 
   useEffect(() => {
     const raw = localStorage.getItem('uploadedTranscript');
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as { transcriptId: string; content: string };
-      setUploadedTranscript(parsed);
-      setTranscriptContent(parsed.content);
-      localStorage.removeItem('uploadedTranscript');
-    } catch {
-      // ignore malformed data
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as { transcriptId: string; content: string; meetingId?: string };
+        if (parsed.meetingId === initialMeetingId) {
+          setUploadedTranscript(parsed);
+          setTranscriptContent(parsed.content);
+        }
+      } catch {
+        // ignore malformed data
+      }
     }
 
-    const rawTasks = localStorage.getItem('uploadedSuggestedTasks');
+    const meetingKey = `suggestedTasks_${initialMeetingId}`;
+    const rawTasks = localStorage.getItem(meetingKey);
     if (!rawTasks) return;
     try {
       const parsedTasks = JSON.parse(rawTasks) as SuggestedTask[];
       setSuggestedTasks(parsedTasks);
       setSelectedSuggestedTaskIndices(new Set(parsedTasks.map((_, i) => i)));
-      localStorage.removeItem('uploadedSuggestedTasks');
     } catch {
       // ignore malformed data
     }
   }, []);
+
+  useEffect(() => {
+    if (!initialMeetingId) return;
+    const meetingKey = `suggestedTasks_${initialMeetingId}`;
+    if (suggestedTasks.length > 0) {
+      localStorage.setItem(meetingKey, JSON.stringify(suggestedTasks));
+    }
+  }, [suggestedTasks]);
+
+  useEffect(() => {
+    if (!uploadedTranscript || !initialMeetingId || suggestedTasks.length > 0 || isSuggestingTasks) return;
+
+    const fetchTaskSuggestions = async () => {
+      setIsSuggestingTasks(true);
+      try {
+        const response = await fetchWithAuth(`/api/meetings/${initialMeetingId}/suggest-tasks`, {
+          method: 'POST',
+        });
+        if (!response.ok) return;
+        const data = (await response.json()) as { tasks?: SuggestedTask[] };
+        const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+        setSuggestedTasks(tasks);
+        setSelectedSuggestedTaskIndices(new Set(tasks.map((_, i) => i)));
+      } catch {
+        // Suggestions are optional; the meeting can still be viewed.
+      } finally {
+        setIsSuggestingTasks(false);
+      }
+    };
+
+    void fetchTaskSuggestions();
+  }, [uploadedTranscript, initialMeetingId, suggestedTasks.length, isSuggestingTasks]);
 
   const handleSaveTranscript = async () => {
     if (!uploadedTranscript || isSavingTranscript) return;
@@ -250,6 +288,12 @@ const MeetingPage = () => {
       '';
     if (!meetingId) return;
 
+    const repo = parsedDraft?.gitHubRepoName || repositoryLabel;
+    if (!repo) {
+      setSuggestedTasksError('No GitHub repository is linked to this meeting.');
+      return;
+    }
+
     setIsCreatingSuggestedTasks(true);
     setSuggestedTasksError('');
 
@@ -259,12 +303,23 @@ const MeetingPage = () => {
         tasksToCreate.map(async (task) => {
           const response = await fetchWithAuth(`/api/meetings/${meetingId}/tasks`, {
             method: 'POST',
-            body: JSON.stringify({ title: task.title, description: task.description }),
+            body: JSON.stringify({
+              title: task.title,
+              description: task.description,
+              createGitHubIssue: true,
+              gitHubRepoFullName: repo,
+            }),
           });
           if (!response.ok) throw new Error('Task creation failed');
         }),
       );
       setSuggestedTasksCreated(true);
+      notifyTasksChanged();
+      void loadTasks(true);
+      if (initialMeetingId) {
+        localStorage.removeItem(`suggestedTasks_${initialMeetingId}`);
+        localStorage.removeItem('uploadedSuggestedTasks');
+      }
     } catch {
       setSuggestedTasksError('Some tasks could not be created. Please try again.');
     } finally {
@@ -275,6 +330,8 @@ const MeetingPage = () => {
   const [isMingoTyping, setIsMingoTyping] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [showSummary, setShowSummary] = useState(false);
+  const [showTasksSidebar, setShowTasksSidebar] = useState(false);
+  const [tasksFilter, setTasksFilter] = useState<'active' | 'completed'>('active');
 
   useEffect(() => {
     document.body.style.overflow = showSummary ? 'hidden' : '';
@@ -288,6 +345,7 @@ const MeetingPage = () => {
   const [emailSending, setEmailSending] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [closedThisSession, setClosedThisSession] = useState<Set<string>>(new Set());
   const [taskUpdateError, setTaskUpdateError] = useState('');
   const [isRefreshingTasks, setIsRefreshingTasks] = useState(false);
 
@@ -302,14 +360,15 @@ const MeetingPage = () => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     const userId = user.id || user._id;
 
-    if (!userId || !repo) return;
+    if (!userId) return;
 
     if (!silent) setIsRefreshingTasks(true);
 
     try {
-      const response = await fetchWithAuth(
-        `/api/users/${userId}/tasks?repo=${encodeURIComponent(repo)}`
-      );
+      const url = repo
+        ? `/api/users/${userId}/tasks?repo=${encodeURIComponent(repo)}`
+        : `/api/users/${userId}/tasks`;
+      const response = await fetchWithAuth(url);
 
       if (!response.ok) throw new Error('Failed to load tasks');
 
@@ -345,9 +404,11 @@ const MeetingPage = () => {
     void loadTasks(true);
   }, []);
 
-  const completedTasks = tasks.filter((task) => task.done);
+  const completedTasks = tasks.filter((task) => closedThisSession.has(task.id));
   const openTasks = tasks.filter((task) => !task.done);
   const displayedTasks = [...openTasks, ...completedTasks];
+  const doneTasks = tasks.filter((task) => task.done);
+  const filteredPanelTasks = tasksFilter === 'active' ? openTasks : doneTasks;
   const summaryNarrative = buildMeetingNarrative(
     meetingTitle,
     repositoryLabel,
@@ -406,6 +467,12 @@ const MeetingPage = () => {
 
       if (data.taskActionPerformed) {
         void loadTasks(true);
+      }
+
+      if (data.suggestedTask) {
+        const newTask = { ...(data.suggestedTask as { title: string; description: string }), isNew: true };
+        setSuggestedTasks((prev) => [newTask, ...prev]);
+        setSelectedSuggestedTaskIndices((s) => new Set([0, ...[...s].map((i) => i + 1)]));
       }
     } catch (error) {
       console.error(error);
@@ -536,9 +603,19 @@ const MeetingPage = () => {
     const task = tasks.find((currentTask) => currentTask.id === taskId);
     if (!task) return;
 
+    const activeMeetingId =
+      meetingIdRef.current ||
+      parsedDraft?.id ||
+      localStorage.getItem('currentMeetingId') ||
+      '';
     const nextDone = !task.done;
     const previousTasks = tasks;
     setTaskUpdateError('');
+    setClosedThisSession((prev) => {
+      const next = new Set(prev);
+      if (nextDone) next.add(taskId); else next.delete(taskId);
+      return next;
+    });
     setTasks((prev) => {
       const updatedTask = { ...task, done: nextDone };
       const rest = prev.filter((currentTask) => currentTask.id !== taskId);
@@ -562,6 +639,7 @@ const MeetingPage = () => {
             gitHubIssueId: task.gitHubIssueId,
             gitHubRepoName: task.gitHubRepoName,
             status: nextDone ? 'Done' : 'To Do',
+            ...(nextDone && activeMeetingId ? { completedInMeetingId: activeMeetingId } : {}),
           }),
         });
 
@@ -575,7 +653,10 @@ const MeetingPage = () => {
       if (task.meetingId) {
         const response = await fetchWithAuth(`/api/meetings/${task.meetingId}/tasks/${task.id}`, {
           method: 'PUT',
-          body: JSON.stringify({ status: nextDone ? 'Done' : 'To Do' }),
+          body: JSON.stringify({
+            status: nextDone ? 'Done' : 'To Do',
+            ...(nextDone && activeMeetingId ? { completedInMeetingId: activeMeetingId } : {}),
+          }),
         });
 
         if (!response.ok) {
@@ -584,6 +665,11 @@ const MeetingPage = () => {
       }
     } catch (error) {
       setTasks(previousTasks);
+      setClosedThisSession((prev) => {
+        const next = new Set(prev);
+        if (nextDone) next.delete(taskId); else next.add(taskId);
+        return next;
+      });
       setTaskUpdateError(error instanceof Error ? error.message : 'Unable to update task status.');
     }
   };
@@ -647,6 +733,17 @@ const MeetingPage = () => {
           </div>
 
           <div className="meeting-hero__actions">
+            <button
+              type="button"
+              className={`meeting-hero__tasks-btn${showTasksSidebar ? ' meeting-hero__tasks-btn--active' : ''}`}
+              onClick={() => setShowTasksSidebar((v) => !v)}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 11l3 3L22 4" />
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+              </svg>
+              Tasks
+            </button>
             <button type="button" className="meeting-hero__end" onClick={handleEndMeeting}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="6" y="5" width="4" height="14" rx="1" />
@@ -753,8 +850,9 @@ const MeetingPage = () => {
             </form>
           </article>
 
-          <div className="meeting-side">
-            {uploadedTranscript && (
+          {/* Middle column: Transcript + Suggested Tasks (only when transcript exists) */}
+          {uploadedTranscript && (
+            <div className="meeting-side">
               <article className="meeting-card">
                 <header className="meeting-card__header meeting-card__header--with-action">
                   <h2>Transcript</h2>
@@ -805,133 +903,229 @@ const MeetingPage = () => {
                   )}
                 </div>
               </article>
-            )}
 
-            {suggestedTasks.length > 0 && (
               <article className="meeting-card">
                 <header className="meeting-card__header">
                   <h2>Suggested Tasks</h2>
                 </header>
-                <div className="meeting-suggested-tasks">
-                  {suggestedTasks.map((task, i) => (
-                    <label key={i} className="meeting-suggested-task-item">
-                      <input
-                        type="checkbox"
-                        checked={selectedSuggestedTaskIndices.has(i)}
-                        onChange={() => toggleSuggestedTaskIndex(i)}
-                        disabled={suggestedTasksCreated}
-                      />
-                      <div className="meeting-suggested-task-text">
-                        <strong>{task.title}</strong>
-                        {task.description && <span>{task.description}</span>}
-                      </div>
-                    </label>
-                  ))}
-                </div>
-                <div className="meeting-suggested-task-footer">
-                  {suggestedTasksCreated ? (
-                    <span className="meeting-suggested-tasks-done">✓ Tasks created</span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="meeting-suggested-task-btn"
-                      onClick={() => void handleCreateSuggestedTasks()}
-                      disabled={selectedSuggestedTaskIndices.size === 0 || isCreatingSuggestedTasks}
-                    >
-                      {isCreatingSuggestedTasks
-                        ? 'Creating…'
-                        : `Create ${selectedSuggestedTaskIndices.size} Task${selectedSuggestedTaskIndices.size !== 1 ? 's' : ''}`}
-                    </button>
-                  )}
-                  {suggestedTasksError && (
-                    <p className="meeting-suggested-tasks-error">{suggestedTasksError}</p>
-                  )}
-                </div>
+                {isSuggestingTasks ? (
+                  <div className="meeting-suggested-tasks-empty">
+                    <p>Analyzing transcript…</p>
+                  </div>
+                ) : suggestedTasks.length === 0 ? (
+                  <div className="meeting-suggested-tasks-empty">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 11l3 3L22 4" />
+                      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                    </svg>
+                    <p>No tasks identified in this transcript.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="meeting-suggested-tasks">
+                      {suggestedTasks.map((task, i) => (
+                        <label key={i} className="meeting-suggested-task-item">
+                          <input
+                            type="checkbox"
+                            checked={selectedSuggestedTaskIndices.has(i)}
+                            onChange={() => toggleSuggestedTaskIndex(i)}
+                            disabled={suggestedTasksCreated}
+                          />
+                          <div className="meeting-suggested-task-text">
+                            <div className="meeting-suggested-task-title-row">
+                              <strong>{task.title}</strong>
+                              {task.isNew && <span className="meeting-suggested-task-new">NEW</span>}
+                            </div>
+                            {task.description && <span>{task.description}</span>}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="meeting-suggested-task-footer">
+                      {suggestedTasksCreated ? (
+                        <span className="meeting-suggested-tasks-done">✓ Tasks created</span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="meeting-suggested-task-btn"
+                          onClick={() => void handleCreateSuggestedTasks()}
+                          disabled={selectedSuggestedTaskIndices.size === 0 || isCreatingSuggestedTasks}
+                        >
+                          {isCreatingSuggestedTasks
+                            ? 'Creating…'
+                            : `Create ${selectedSuggestedTaskIndices.size} Task${selectedSuggestedTaskIndices.size !== 1 ? 's' : ''}`}
+                        </button>
+                      )}
+                      {suggestedTasksError && (
+                        <p className="meeting-suggested-tasks-error">{suggestedTasksError}</p>
+                      )}
+                    </div>
+                  </>
+                )}
               </article>
-            )}
+            </div>
+          )}
 
-            <article className="meeting-card">
-              <header className="meeting-card__header meeting-card__header--with-action">
-                <h2>Tasks</h2>
+          {/* Right column: Suggested Tasks when no transcript */}
+          {!uploadedTranscript && (
+            <div className="meeting-side">
+              <article className="meeting-card">
+                <header className="meeting-card__header">
+                  <h2>Suggested Tasks</h2>
+                </header>
+                {suggestedTasks.length === 0 ? (
+                  <div className="meeting-suggested-tasks-empty">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 11l3 3L22 4" />
+                      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                    </svg>
+                    <p>Ask Mingo to suggest tasks and they'll appear here.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="meeting-suggested-tasks">
+                      {suggestedTasks.map((task, i) => (
+                        <div key={i} className="meeting-suggested-task-item">
+                          <div className="meeting-suggested-task-text">
+                            <div className="meeting-suggested-task-title-row">
+                              <strong>{task.title}</strong>
+                              {task.isNew && <span className="meeting-suggested-task-new">NEW</span>}
+                            </div>
+                            {task.description && <span>{task.description}</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </article>
+            </div>
+          )}
+        </section>
+
+        {/* Tasks sidebar */}
+        {showTasksSidebar && (
+          <div className="tasks-sidebar__overlay" onClick={() => setShowTasksSidebar(false)} />
+        )}
+        <aside className={`tasks-sidebar${showTasksSidebar ? ' tasks-sidebar--open' : ''}`}>
+          <div className="tasks-sidebar__header">
+            <h2>Tasks</h2>
+            <div className="tasks-sidebar__header-actions">
+              <div className="meeting-tasks-toggle">
                 <button
                   type="button"
-                  className={`meeting-transcript-btn meeting-transcript-btn--edit meeting-tasks-refresh${isRefreshingTasks ? ' meeting-tasks-refresh--spinning' : ''}`}
-                  onClick={() => void loadTasks(false)}
-                  disabled={isRefreshingTasks}
-                  aria-label="Refresh tasks"
+                  className={`meeting-tasks-toggle__btn${tasksFilter === 'active' ? ' meeting-tasks-toggle__btn--active' : ''}`}
+                  onClick={() => setTasksFilter('active')}
                 >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="23 4 23 10 17 10" />
-                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                  </svg>
-                  {isRefreshingTasks ? 'Refreshing…' : 'Refresh'}
+                  Active
+                  {openTasks.length > 0 && (
+                    <span className="meeting-tasks-toggle__count">{openTasks.length}</span>
+                  )}
                 </button>
-              </header>
-
-              <div className="meeting-tasks">
-                {taskUpdateError && <p className="meeting-tasks-error">{taskUpdateError}</p>}
-                {displayedTasks.length > 0 ? (
-                  displayedTasks.map((task) => (
-                    <div key={task.id} className={`meeting-task-row${task.done ? ' meeting-task-row--done' : ''}`}>
-                      <button
-                        type="button"
-                        className={`meeting-task-status-dot${task.done ? ' meeting-task-status-dot--done' : ' meeting-task-status-dot--todo'}`}
-                        onClick={() => void toggleTask(task.id)}
-                        aria-label={task.done ? 'Mark as to do' : 'Mark as done'}
-                      >
-                        {task.done && (
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        )}
-                      </button>
-
-                      <div className="meeting-task-row-info">
-                        <strong className={`meeting-task-row-title${task.done ? ' meeting-task-row-title--done' : ''}`}>
-                          {task.title}
-                        </strong>
-
-                        <span className="meeting-task-row-meta">
-                          {task.assignee}
-                          <i>|</i>
-                          {task.due}
-                        </span>
-                      </div>
-
-                      <div className="meeting-task-row-badges">
-                        {task.htmlUrl && (
-                          <a
-                            className="meeting-task-source"
-                            href={task.htmlUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            GitHub
-                          </a>
-                        )}
-                        <span className="meeting-task-tag">{task.tag}</span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="meeting-tasks-empty">
-                    <span className="meeting-tasks-empty__icon">✓</span>
-                    <span>No tasks</span>
-                  </div>
-                )}
+                <button
+                  type="button"
+                  className={`meeting-tasks-toggle__btn${tasksFilter === 'completed' ? ' meeting-tasks-toggle__btn--active' : ''}`}
+                  onClick={() => setTasksFilter('completed')}
+                >
+                  Completed
+                  {doneTasks.length > 0 && (
+                    <span className="meeting-tasks-toggle__count">{doneTasks.length}</span>
+                  )}
+                </button>
               </div>
-            </article>
+              <button
+                type="button"
+                className={`meeting-transcript-btn meeting-transcript-btn--edit meeting-tasks-refresh${isRefreshingTasks ? ' meeting-tasks-refresh--spinning' : ''}`}
+                onClick={() => void loadTasks(false)}
+                disabled={isRefreshingTasks}
+                aria-label="Refresh tasks"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="23 4 23 10 17 10" />
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="tasks-sidebar__close"
+                onClick={() => setShowTasksSidebar(false)}
+                aria-label="Close tasks"
+              >
+                ×
+              </button>
+            </div>
           </div>
-        </section>
+
+          <div className="meeting-tasks tasks-sidebar__body">
+            {taskUpdateError && <p className="meeting-tasks-error">{taskUpdateError}</p>}
+            {filteredPanelTasks.length > 0 ? (
+              filteredPanelTasks.map((task) => (
+                <div key={task.id} className={`meeting-task-row${task.done ? ' meeting-task-row--done' : ''}`}>
+                  <button
+                    type="button"
+                    className={`meeting-task-status-dot${task.done ? ' meeting-task-status-dot--done' : ' meeting-task-status-dot--todo'}`}
+                    onClick={() => void toggleTask(task.id)}
+                    aria-label={task.done ? 'Mark as to do' : 'Mark as done'}
+                  >
+                    {task.done && (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </button>
+
+                  <div className="meeting-task-row-info">
+                    <strong className={`meeting-task-row-title${task.done ? ' meeting-task-row-title--done' : ''}`}>
+                      {task.title}
+                    </strong>
+                    <span className="meeting-task-row-meta">
+                      {task.assignee}
+                      <i>|</i>
+                      {task.due}
+                    </span>
+                  </div>
+
+                  <div className="meeting-task-row-badges">
+                    {task.htmlUrl && (
+                      <a
+                        className="meeting-task-source"
+                        href={task.htmlUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        GitHub
+                      </a>
+                    )}
+                    <span className="meeting-task-tag">{task.tag}</span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="meeting-tasks-empty">
+                <span className="meeting-tasks-empty__icon">✓</span>
+                <span>{tasksFilter === 'active' ? 'No active tasks' : 'No completed tasks'}</span>
+              </div>
+            )}
+          </div>
+        </aside>
       </main>
 
       {showSummary && (
         <div className="meeting-summary-modal__overlay">
           <div className="meeting-summary-modal">
+            {summaryLoading && (
+              <div className="meeting-summary-modal__loading-shield">
+                <div className="meeting-summary-modal__loading-box">
+                  <div className="meeting-summary-modal__spinner" />
+                  <p>Generating summary…</p>
+                </div>
+              </div>
+            )}
             <button
               type="button"
               className="meeting-summary-modal__close"
-              onClick={() => setShowSummary(false)}
+              onClick={() => !summaryLoading && setShowSummary(false)}
+              disabled={summaryLoading}
               aria-label="Close summary"
             >
               ×
@@ -968,7 +1162,13 @@ const MeetingPage = () => {
             <article className="meeting-summary__card">
               <h3>✨ Summary</h3>
               {summaryLoading ? (
-                <p>Generating summary...</p>
+                <div className="summary-skeleton">
+                  <div className="summary-skeleton__line" />
+                  <div className="summary-skeleton__line" />
+                  <div className="summary-skeleton__line" />
+                  <div className="summary-skeleton__line" />
+                  <div className="summary-skeleton__line" />
+                </div>
               ) : summaryError ? (
                 <p>{summaryError}</p>
               ) : (
@@ -1006,22 +1206,40 @@ const MeetingPage = () => {
               </article>
 
               <article className="meeting-summary__card">
-                <h3>🕒 Remaining Tasks</h3>
-                <div className="meeting-summary__task-list">
-                  {openTasks.length > 0 ? (
-                    openTasks.map((task) => (
-                      <div key={task.id} className="meeting-summary__task-row">
-                        <strong>{task.title}</strong>
-                        <span>{task.assignee}</span>
-                        <em>{task.due}</em>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="meeting-summary__empty">
-                      No open tasks.
+                <h3>💡 Suggested Tasks</h3>
+                {suggestedTasks.length === 0 ? (
+                  <p className="meeting-summary__empty">No suggested tasks.</p>
+                ) : suggestedTasksCreated ? (
+                  <p className="meeting-summary__suggested-done">✓ Tasks created successfully</p>
+                ) : (
+                  <>
+                    <div className="meeting-summary__suggested-list">
+                      {suggestedTasks.map((task, i) => (
+                        <label key={i} className="meeting-summary__suggested-item">
+                          <input
+                            type="checkbox"
+                            checked={selectedSuggestedTaskIndices.has(i)}
+                            onChange={() => toggleSuggestedTaskIndex(i)}
+                          />
+                          <span>{task.title}</span>
+                        </label>
+                      ))}
                     </div>
-                  )}
-                </div>
+                    {suggestedTasksError && (
+                      <p className="meeting-summary__suggested-error">{suggestedTasksError}</p>
+                    )}
+                    <button
+                      type="button"
+                      className="meeting-summary__suggested-btn"
+                      onClick={() => void handleCreateSuggestedTasks()}
+                      disabled={selectedSuggestedTaskIndices.size === 0 || isCreatingSuggestedTasks}
+                    >
+                      {isCreatingSuggestedTasks
+                        ? 'Creating…'
+                        : `Create ${selectedSuggestedTaskIndices.size} Task${selectedSuggestedTaskIndices.size !== 1 ? 's' : ''}`}
+                    </button>
+                  </>
+                )}
               </article>
             </div>
 
