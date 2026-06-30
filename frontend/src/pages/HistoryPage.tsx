@@ -53,6 +53,10 @@ type MeetingTask = {
   title?: string;
   description?: string;
   status?: string;
+  createdInMeeting?: boolean;
+  completedInMeeting?: boolean;
+  completedInMeetingId?: string;
+  createdInMeetingId?: string;
   gitHubIssueId?: number;
   gitHubRepoName?: string;
   dueDate?: string;
@@ -69,19 +73,8 @@ type MeetingChatMessage = {
 const formatTranscript = (text: string) =>
   text.replace(/([.!?])\s+([A-Z])/g, '$1\n\n$2').trim();
 
-const getTaskKey = (task: MeetingTask) =>
-  task.gitHubIssueId && task.gitHubRepoName
-    ? `${task.gitHubRepoName.trim().toLowerCase()}#${task.gitHubIssueId}`
-    : task._id;
-
-const mergeMeetingTasks = (localTasks: MeetingTask[], repoTasks: MeetingTask[]) => {
-  const byKey = new Map<string, MeetingTask>();
-  localTasks.forEach((task) => byKey.set(getTaskKey(task), task));
-  repoTasks.forEach((task) => byKey.set(getTaskKey(task), task));
-  return Array.from(byKey.values()).sort((left, right) => {
-    const statusOrder = (left.status === 'Done' ? 1 : 0) - (right.status === 'Done' ? 1 : 0);
-    if (statusOrder !== 0) return statusOrder;
-
+const sortMeetingTasks = (tasks: MeetingTask[]) =>
+  [...tasks].sort((left, right) => {
     const leftDate = new Date(left.dueDate || left.updatedAt || left.createdAt || 0).getTime();
     const rightDate = new Date(right.dueDate || right.updatedAt || right.createdAt || 0).getTime();
     const safeLeftDate = Number.isNaN(leftDate) || leftDate === 0 ? Number.POSITIVE_INFINITY : leftDate;
@@ -89,7 +82,12 @@ const mergeMeetingTasks = (localTasks: MeetingTask[], repoTasks: MeetingTask[]) 
 
     return safeLeftDate - safeRightDate;
   });
-};
+
+const isTaskCreatedInMeeting = (task: MeetingTask) =>
+  task.createdInMeeting === true;
+
+const isTaskCompletedInMeeting = (task: MeetingTask) =>
+  task.completedInMeeting === true;
 
 const formatDuration = (duration?: number) => {
   if (typeof duration !== 'number' || Number.isNaN(duration)) {
@@ -151,7 +149,7 @@ const normalizeMeeting = (meeting: RawMeeting): Meeting => {
     ...(Array.isArray(meeting.inviteEmails) ? meeting.inviteEmails : []),
   ].filter((label, index, array) => Boolean(label) && array.indexOf(label) === index);
 
-  const isTranscribed = Boolean(meeting.transcriptId && !meeting.mingoAgentId);
+  const isTranscribed = Boolean(meeting.transcriptId);
 
   return {
     id: meeting._id,
@@ -167,7 +165,9 @@ const normalizeMeeting = (meeting: RawMeeting): Meeting => {
         ? formatRecordingDuration(meeting.duration)
         : undefined,
     status: isLive ? 'Live' : isCompleted ? 'Completed' : 'Upcoming',
-    tasksCount: Array.isArray(meeting.tasks) ? meeting.tasks.length : 0,
+    tasksCount: Array.isArray(meeting.tasks)
+      ? meeting.tasks.filter((t: any) => t?.status !== 'Done').length
+      : 0,
     summary: meeting.summary || '',
     repository: meeting.gitHubRepoName || '-',
     isTranscribed,
@@ -269,22 +269,10 @@ const HistoryPage = () => {
   const loadMeetingTasks = async (meeting: Meeting) => {
     try {
       setIsLoadingTasks(true);
-      const repo = meeting.repository !== '-' ? meeting.repository : '';
-      const [localResponse, repoResponse] = await Promise.all([
-        fetchWithAuth(`/api/meetings/${meeting.id}/tasks`),
-        currentUser?._id && repo
-          ? fetchWithAuth(`/api/users/${currentUser._id}/tasks?repo=${encodeURIComponent(repo)}`)
-          : Promise.resolve(null),
-      ]);
-
-      const localData = localResponse.ok ? ((await localResponse.json()) as MeetingTask[]) : [];
-      const repoData = repoResponse?.ok ? ((await repoResponse.json()) as MeetingTask[]) : [];
-      setMeetingTasks(
-        mergeMeetingTasks(
-          Array.isArray(localData) ? localData : [],
-          Array.isArray(repoData) ? repoData : [],
-        ),
-      );
+      const response = await fetchWithAuth(`/api/meetings/${meeting.id}/tasks`);
+      const data = response.ok ? ((await response.json()) as MeetingTask[]) : [];
+      const tasks = Array.isArray(data) ? data : [];
+      setMeetingTasks(sortMeetingTasks(tasks));
     } catch {
       // tasks are optional — don't block summary
     } finally {
@@ -305,6 +293,15 @@ const HistoryPage = () => {
       setIsLoadingChat(false);
     }
   };
+
+  const createdMeetingTasks = useMemo(
+    () => meetingTasks.filter(isTaskCreatedInMeeting),
+    [meetingTasks],
+  );
+  const completedMeetingTasks = useMemo(
+    () => meetingTasks.filter(isTaskCompletedInMeeting),
+    [meetingTasks],
+  );
 
   const openSummary = async (meeting: Meeting) => {
     if (meeting.status !== 'Completed') {
@@ -605,14 +602,14 @@ const HistoryPage = () => {
                 </article>
 
                 <article className="history-modal-card">
-                  <h3 className="history-modal-card-title">Tasks</h3>
+                  <h3 className="history-modal-card-title">Tasks Created</h3>
                   {isLoadingTasks ? (
                     <p className="history-modal-loading">Loading tasks…</p>
-                  ) : meetingTasks.length > 0 ? (
+                  ) : createdMeetingTasks.length > 0 ? (
                     <div className="history-tasks-list">
-                      {meetingTasks.map((task) => (
+                      {createdMeetingTasks.map((task) => (
                         <div key={task._id} className="history-task-item">
-                          <span className={`history-task-dot history-task-dot--${task.status === 'Done' ? 'done' : 'todo'}`} />
+                          <span className={`history-task-dot ${task.status === 'Done' ? 'history-task-dot--done' : 'history-task-dot--todo'}`} />
                           <div className="history-task-text">
                             <span>{task.title || task.description || 'Untitled task'}</span>
                             {task.gitHubIssueId && (
@@ -623,7 +620,30 @@ const HistoryPage = () => {
                       ))}
                     </div>
                   ) : (
-                    <p className="meeting-summary__empty">No tasks for this meeting.</p>
+                    <p className="meeting-summary__empty">No tasks were created in this meeting.</p>
+                  )}
+                </article>
+
+                <article className="history-modal-card">
+                  <h3 className="history-modal-card-title">Finished Tasks</h3>
+                  {isLoadingTasks ? (
+                    <p className="history-modal-loading">Loading tasks…</p>
+                  ) : completedMeetingTasks.length > 0 ? (
+                    <div className="history-tasks-list">
+                      {completedMeetingTasks.map((task) => (
+                        <div key={task._id} className="history-task-item">
+                          <span className="history-task-dot history-task-dot--done" />
+                          <div className="history-task-text">
+                            <span>{task.title || task.description || 'Untitled task'}</span>
+                            {task.gitHubIssueId && (
+                              <span className="history-task-tag">{task.gitHubRepoName || 'GitHub'}-{task.gitHubIssueId}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="meeting-summary__empty">No tasks were finished in this meeting.</p>
                   )}
                 </article>
 

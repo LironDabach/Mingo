@@ -533,17 +533,39 @@ class tasksController extends baseController {
           { organizerId: normalizedUserId },
           { participants: normalizedUserId },
         ],
-        gitHubRepoName: { $type: "string", $ne: "" },
       })
       .sort({ date: -1 });
 
+    let sourceRepoNames: string[];
+
+    if (requestedRepoNames.length > 0) {
+      sourceRepoNames = requestedRepoNames;
+    } else {
+      // Discover repos from meeting gitHubRepoName fields
+      const meetingRepos = meetings
+        .map((m) => m.gitHubRepoName)
+        .filter((r): r is string => typeof r === "string" && r.trim() !== "");
+
+      // Also discover repos from tasks saved in those meetings
+      const meetingIds = meetings.map((m) => m._id);
+      const taskRepoRows = await meetingsModel.aggregate<{ _id: string }>([
+        { $match: { _id: { $in: meetingIds } } },
+        { $lookup: { from: "tasks", localField: "tasks", foreignField: "_id", as: "taskDocs" } },
+        { $unwind: { path: "$taskDocs", preserveNullAndEmptyArrays: false } },
+        {
+          $match: {
+            "taskDocs.gitHubRepoName": { $type: "string", $ne: "" },
+          },
+        },
+        { $group: { _id: "$taskDocs.gitHubRepoName" } },
+      ]);
+      const taskRepos = taskRepoRows.map((r) => r._id).filter(Boolean);
+
+      sourceRepoNames = [...meetingRepos, ...taskRepos];
+    }
+
     const repoNames = Array.from(
-      new Set(
-        (requestedRepoNames.length > 0
-          ? requestedRepoNames
-          : meetings.map((meeting) => meeting.gitHubRepoName)
-        ).map((repoName) => this.normalizeRepoName(repoName)),
-      ),
+      new Set(sourceRepoNames.map((r) => this.normalizeRepoName(r))),
     ).filter(Boolean);
 
     if (repoNames.length === 0) {
@@ -789,7 +811,21 @@ class tasksController extends baseController {
         typeof body.gitHubRepoOwner === "string" && body.gitHubRepoOwner.trim()
           ? body.gitHubRepoOwner.trim()
           : fallbackOwnerId,
+      completedInMeetingId:
+        typeof body.completedInMeetingId === "string" && mongoose.Types.ObjectId.isValid(body.completedInMeetingId)
+          ? body.completedInMeetingId
+          : undefined,
+      completedAt:
+        typeof body.completedInMeetingId === "string" &&
+        mongoose.Types.ObjectId.isValid(body.completedInMeetingId)
+          ? new Date()
+          : undefined,
     };
+
+    if (payload.status !== "Done") {
+      delete payload.completedInMeetingId;
+      delete payload.completedAt;
+    }
 
     if (payload.dueDate instanceof Date && Number.isNaN(payload.dueDate.getTime())) {
       delete payload.dueDate;
@@ -821,11 +857,80 @@ class tasksController extends baseController {
         return res.status(404).send("Error: Meeting not found");
       }
 
-      const localOnlyTasks = ((meeting.tasks ?? []) as any[]).filter(
-        (task) => !(task.gitHubIssueId && task.gitHubRepoName),
-      );
+      const dbTasks = ((meeting.tasks ?? []) as any[]);
+      const meetingIdString = meeting._id.toString();
+      const dbTasksForResponse = dbTasks.map((task) => {
+        const taskObject = task.toObject ? task.toObject() : task;
+        const createdInMeetingId = taskObject.createdInMeetingId?.toString?.();
+        const completedInMeetingId = taskObject.completedInMeetingId?.toString?.();
 
-      return res.json(localOnlyTasks);
+        return {
+          ...taskObject,
+          createdInMeeting: createdInMeetingId
+            ? createdInMeetingId === meetingIdString
+            : completedInMeetingId === meetingIdString
+              ? false
+            : true,
+          completedInMeeting: completedInMeetingId === meetingIdString,
+          meeting: {
+            _id: meeting._id,
+            title: meeting.title,
+            date: meeting.date,
+            gitHubRepoName: meeting.gitHubRepoName,
+          },
+        };
+      });
+
+      const repoName = typeof meeting.gitHubRepoName === "string" ? meeting.gitHubRepoName.trim() : "";
+
+      if (!repoName || !req.user?._id) {
+        return res.json(dbTasksForResponse);
+      }
+
+      const user = await usersModel.findById(req.user._id);
+      const authorization = this.getGitHubAuthorization(user);
+
+      if (!authorization) {
+        return res.json(dbTasksForResponse);
+      }
+
+      const repoFull = await this.resolveGitHubRepoFullName(authorization, repoName);
+
+      const [openIssues, closedIssues] = await Promise.all([
+        this.fetchGitHubJson<Array<{ number: number; title: string; body: string | null; state: string; pull_request?: unknown }>>(
+          `https://api.github.com/repos/${repoFull}/issues?state=open&per_page=100`,
+          authorization,
+        ),
+        this.fetchGitHubJson<Array<{ number: number; title: string; body: string | null; state: string; pull_request?: unknown }>>(
+          `https://api.github.com/repos/${repoFull}/issues?state=closed&per_page=100`,
+          authorization,
+        ),
+      ]);
+
+      const allIssues = [...(openIssues ?? []), ...(closedIssues ?? [])].filter(
+        (i) => !i.pull_request,
+      );
+      const dbByIssueId = new Map<number, any>();
+      dbTasksForResponse.forEach((task) => {
+        if (task.gitHubIssueId) {
+          dbByIssueId.set(task.gitHubIssueId, task);
+        }
+      });
+      const extraTasks = allIssues
+        .filter((issue) => !dbByIssueId.has(issue.number))
+        .map((issue) => ({
+          _id: `gh-${issue.number}`,
+          title: issue.title,
+          description: issue.body ?? undefined,
+          status: issue.state === "closed" ? "Done" : "To Do",
+          gitHubIssueId: issue.number,
+          gitHubRepoName: repoFull,
+          source: "github",
+          createdInMeeting: false,
+          completedInMeeting: false,
+        }));
+
+      return res.json([...dbTasksForResponse, ...extraTasks]);
     } catch (err) {
       console.error(err);
       return res.status(500).send("Error: Can't retrieve tasks for the meeting");
@@ -872,51 +977,6 @@ class tasksController extends baseController {
     }
 
     try {
-      const normalizedUserId = mongoose.Types.ObjectId.isValid(userId)
-        ? new mongoose.Types.ObjectId(userId)
-        : userId;
-
-      const tasks = await this.model
-        .find({
-          $or: [
-            { gitHubRepoOwner: normalizedUserId },
-            { assigneeId: normalizedUserId },
-          ],
-        })
-        .populate("assigneeId", "fullname email username")
-        .sort({ updatedAt: -1, createdAt: -1 });
-
-      const taskIds = tasks.map((task: any) => task._id);
-      const meetings = await meetingsModel
-        .find({ tasks: { $in: taskIds } }, "title date gitHubRepoName tasks")
-        .sort({ date: -1 });
-
-      const meetingByTaskId = new Map<string, any>();
-      meetings.forEach((meeting: any) => {
-        meeting.tasks.forEach((taskId: mongoose.Types.ObjectId) => {
-          const key = taskId.toString();
-          if (!meetingByTaskId.has(key)) {
-            meetingByTaskId.set(key, meeting);
-          }
-        });
-      });
-
-      const localTasks = tasks.map((task: any) => {
-          const taskObject = task.toObject ? task.toObject() : task;
-          const meeting = meetingByTaskId.get(task._id.toString());
-
-          return {
-            ...taskObject,
-            meeting: meeting
-              ? {
-                  _id: meeting._id,
-                  title: meeting.title,
-                  date: meeting.date,
-                  gitHubRepoName: meeting.gitHubRepoName,
-                }
-              : null,
-          };
-        });
       const requestedRepoNames = this.parseRepoQuery(req.query.repo);
       const projectQuery =
         typeof req.query.project === "string" ? req.query.project : "";
@@ -952,33 +1012,9 @@ class tasksController extends baseController {
           data: githubTasks,
         });
       }
-      const normalizedRequestedRepos = new Set(
-        requestedRepoNames.map((r) => this.normalizeRepoName(r)),
-      );
 
-      const localOnlyTasks = localTasks.filter(
-        (task: any) => !(task.gitHubIssueId && task.gitHubRepoName),
-      );
-
-      // When a specific repo is selected, show only local-only tasks linked to that repo.
-      const filteredLocalTasks =
-        normalizedRequestedRepos.size === 0
-          ? localOnlyTasks
-          : localOnlyTasks.filter((task: any) => {
-              if (!task.gitHubRepoName) return false;
-              const taskRepo = this.normalizeRepoName(task.gitHubRepoName);
-              return (
-                normalizedRequestedRepos.has(taskRepo) ||
-                // also match on short name (e.g. "tictactoe" matches "owner/tictactoe")
-                [...normalizedRequestedRepos].some(
-                  (r) => r === taskRepo || r.endsWith(`/${taskRepo}`) || taskRepo.endsWith(`/${r}`),
-                )
-              );
-            });
-
-      const githubTaskPool = githubTasks;
       const seenRemoteKeys = new Set<string>();
-      const uniqueGithubTasks = githubTaskPool.filter(
+      const uniqueGithubTasks = githubTasks.filter(
         (task: any) =>
           {
             const key = task.gitHubIssueId
@@ -995,7 +1031,7 @@ class tasksController extends baseController {
       );
 
       return res.json(
-        [...filteredLocalTasks, ...uniqueGithubTasks].sort((left: any, right: any) => {
+        uniqueGithubTasks.sort((left: any, right: any) => {
           const leftTime = new Date(left.updatedAt || left.createdAt || 0).getTime();
           const rightTime = new Date(right.updatedAt || right.createdAt || 0).getTime();
           return rightTime - leftTime;
@@ -1049,9 +1085,11 @@ class tasksController extends baseController {
           return;
         }
 
+        const resolvedRepo = await this.resolveGitHubRepoFullName(authorization, repoFullName);
+
         const issueNumber = await this.createGitHubIssue(
           authorization,
-          repoFullName,
+          resolvedRepo,
           String(payload.title || ""),
           typeof payload.description === "string" ? payload.description : undefined,
         );
@@ -1063,24 +1101,44 @@ class tasksController extends baseController {
 
         this.clearGitHubTasksCacheForUser(req.user._id.toString());
 
+        const dbTask = await this.model.create({
+          ...payload,
+          gitHubIssueId: issueNumber,
+          gitHubRepoName: resolvedRepo,
+          gitHubRepoOwner: req.user._id,
+          createdInMeetingId: meeting._id,
+          status: "To Do",
+        });
+        meeting.tasks.push(dbTask._id as mongoose.Types.ObjectId);
+        await meeting.save();
+
         res.status(201).json({
-          _id: `github:${repoFullName}:${issueNumber}`,
+          _id: dbTask._id,
           title: payload.title,
           description: payload.description,
           status: "To Do",
           gitHubIssueId: issueNumber,
-          gitHubRepoName: repoFullName,
+          gitHubRepoName: resolvedRepo,
           source: "github",
           sourceType: "issue",
+          createdInMeeting: true,
+          completedInMeeting: false,
         });
         return;
       }
 
-      const task = await this.model.create(payload);
+      const task = await this.model.create({
+        ...payload,
+        createdInMeetingId: meeting._id,
+      });
       meeting.tasks.push(task._id as mongoose.Types.ObjectId);
       await meeting.save();
 
-      res.status(201).json(task);
+      res.status(201).json({
+        ...(task.toObject ? task.toObject() : task),
+        createdInMeeting: true,
+        completedInMeeting: false,
+      });
     } catch (err) {
       console.error(err);
       res.status(500).send("Error: Can't create task");
@@ -1107,8 +1165,12 @@ class tasksController extends baseController {
       }
 
       const payload = this.buildTaskPayload(req.body);
+      const update: Record<string, unknown> = { $set: payload };
+      if (payload.status && payload.status !== "Done") {
+        update.$unset = { completedInMeetingId: "", completedAt: "" };
+      }
       const updatedTask = await this.model
-        .findByIdAndUpdate(taskId, payload, {
+        .findByIdAndUpdate(taskId, update, {
           returnDocument: 'after',
         })
         .populate("assigneeId", "fullname email username");
@@ -1132,6 +1194,12 @@ class tasksController extends baseController {
     const requestedRepoName =
       typeof req.body.gitHubRepoName === "string" && req.body.gitHubRepoName.trim()
         ? req.body.gitHubRepoName.trim()
+        : "";
+    const completedInMeetingId =
+      status === "Done" &&
+      typeof req.body.completedInMeetingId === "string" &&
+      mongoose.Types.ObjectId.isValid(req.body.completedInMeetingId)
+        ? req.body.completedInMeetingId
         : "";
 
     if (!userId || !req.user?._id || userId !== req.user._id.toString()) {
@@ -1170,7 +1238,22 @@ class tasksController extends baseController {
       }
 
       const repoShortName = repoFullName.split("/").pop() || repoFullName;
-      await this.model.updateMany(
+      const taskUpdate: Record<string, unknown> = {
+        $set: {
+          status,
+          ...(completedInMeetingId
+            ? {
+                completedInMeetingId: new mongoose.Types.ObjectId(completedInMeetingId),
+                completedAt: new Date(),
+              }
+            : {}),
+        },
+      };
+      if (status !== "Done") {
+        taskUpdate.$unset = { completedInMeetingId: "", completedAt: "" };
+      }
+
+      const updateResult = await this.model.updateMany(
         {
           gitHubIssueId: issueNumber,
           $or: [
@@ -1178,8 +1261,41 @@ class tasksController extends baseController {
             { gitHubRepoName: repoShortName },
           ],
         },
-        { status },
+        taskUpdate,
       );
+
+      if (completedInMeetingId && updateResult.matchedCount > 0) {
+        const updatedTasks = await this.model.find(
+          {
+            gitHubIssueId: issueNumber,
+            $or: [
+              { gitHubRepoName: repoFullName },
+              { gitHubRepoName: repoShortName },
+            ],
+          },
+          "_id",
+        );
+        await meetingsModel.findByIdAndUpdate(completedInMeetingId, {
+          $addToSet: { tasks: { $each: updatedTasks.map((task: any) => task._id) } },
+        });
+      }
+
+      if (completedInMeetingId && updateResult.matchedCount === 0) {
+        const meeting = await meetingsModel.findById(completedInMeetingId);
+        if (meeting) {
+          const task = await this.model.create({
+            title: githubIssue.title || `GitHub issue #${issueNumber}`,
+            status,
+            gitHubIssueId: issueNumber,
+            gitHubRepoName: repoFullName,
+            gitHubRepoOwner: req.user._id,
+            completedInMeetingId: meeting._id,
+            completedAt: new Date(),
+          });
+          meeting.tasks.push(task._id as mongoose.Types.ObjectId);
+          await meeting.save();
+        }
+      }
 
       this.clearGitHubTasksCacheForUser(userId);
 
@@ -1188,6 +1304,7 @@ class tasksController extends baseController {
         gitHubRepoName: repoFullName,
         status,
         htmlUrl: githubIssue.html_url,
+        completedInMeeting: Boolean(completedInMeetingId),
       });
     } catch (err) {
       console.error(err);

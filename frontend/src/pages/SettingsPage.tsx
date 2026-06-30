@@ -264,6 +264,7 @@ const SettingsPage = () => {
       const formData = new FormData();
       formData.append('fullname', fullname.trim());
       formData.append('username', username.trim());
+      formData.append('email', profile.email);
 
       const response = await fetchWithAuth(`/api/user/${profile._id}`, {
         method: 'PUT',

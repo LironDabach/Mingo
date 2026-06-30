@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchWithAuth, getStoredUser, parseResponseBody } from '../../lib/auth';
+import { notifyTasksChanged } from '../../lib/taskEvents';
 import '../StartMeetingModal/StartMeetingModal.css';
 import '../../pages/MeetingPage.css';
 import './UploadMeetingModal.css';
@@ -255,7 +256,12 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
     if (!result || selectedTaskIndices.size === 0 || isCreatingTasks) return;
 
     const selectedRepoFullName =
-      repositories.find((r) => r.name === summaryRepo)?.fullName ?? null;
+      repositories.find((r) => r.fullName === summaryRepo)?.fullName ?? null;
+
+    if (!selectedRepoFullName) {
+      setTaskCreateError('Choose a GitHub repository before creating tasks.');
+      return;
+    }
 
     setIsCreatingTasks(true);
     setTaskCreateError('');
@@ -282,6 +288,7 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
         }),
       );
       setTasksCreated(true);
+      notifyTasksChanged();
     } catch {
       setTaskCreateError('Some tasks could not be created. Please try again.');
     } finally {
@@ -404,7 +411,7 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
                 </article>
               )}
 
-              <article className="meeting-summary__card">
+              <article className="meeting-summary__card upload-tasks-card">
                 <h3>
                   ✅ Suggested Tasks
                   {isSuggestingTasks && <span className="upload-tasks-loading"> — analyzing…</span>}
@@ -418,9 +425,9 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
                     onChange={(e) => setSummaryRepo(e.target.value)}
                     disabled={isCreatingTasks || tasksCreated}
                   >
-                    <option value="">— No repository (save locally only) —</option>
+                    <option value="">— Select repository —</option>
                     {repositories.map((r) => (
-                      <option key={r.id} value={r.name}>{r.fullName}</option>
+                      <option key={r.id} value={r.fullName}>{r.fullName}</option>
                     ))}
                   </select>
                 </div>
@@ -460,7 +467,7 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
             ) : selectedTaskIndices.size > 0 ? (
               <button
                 type="button"
-                className="meeting-summary-modal__mail"
+                className="upload-create-tasks-btn"
                 onClick={handleCreateTasks}
                 disabled={isCreatingTasks}
               >
@@ -468,12 +475,12 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
                   ? 'Creating…'
                   : summaryRepo
                     ? `Create ${selectedTaskIndices.size} Task${selectedTaskIndices.size > 1 ? 's' : ''} in ${summaryRepo}`
-                    : `Save ${selectedTaskIndices.size} Task${selectedTaskIndices.size > 1 ? 's' : ''} Locally`}
+                    : `Select repo to create ${selectedTaskIndices.size} Task${selectedTaskIndices.size > 1 ? 's' : ''}`}
               </button>
             ) : null}
             <button
               type="button"
-              className="meeting-summary-modal__mail"
+              className="meeting-summary-modal__home"
               onClick={() => {
                 localStorage.setItem('currentMeetingId', meeting._id);
                 localStorage.setItem(
@@ -488,9 +495,9 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
                 );
                 localStorage.setItem(
                   'uploadedTranscript',
-                  JSON.stringify({ transcriptId: result.transcript._id, content: text }),
+                  JSON.stringify({ transcriptId: result.transcript._id, content: text, meetingId: meeting._id }),
                 );
-                localStorage.setItem('uploadedSuggestedTasks', JSON.stringify(suggestedTasks));
+                localStorage.setItem(`suggestedTasks_${meeting._id}`, JSON.stringify(suggestedTasks));
                 onClose();
                 navigate('/meeting');
               }}
@@ -604,7 +611,7 @@ const UploadMeetingModal = ({ onClose }: UploadMeetingModalProps) => {
                   >
                     <option value="">No repository</option>
                     {repositories.map((repo) => (
-                      <option key={repo.id} value={repo.name}>
+                      <option key={repo.id} value={repo.fullName}>
                         {repo.fullName}
                       </option>
                     ))}

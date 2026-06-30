@@ -418,8 +418,15 @@
 .history-tasks-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  max-height: 210px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
+
+.history-tasks-list::-webkit-scrollbar { width: 4px; }
+.history-tasks-list::-webkit-scrollbar-track { background: transparent; }
+.history-tasks-list::-webkit-scrollbar-thumb { background: #c7d2fe; border-radius: 999px; }
 
 .history-task-item {
   display: flex;
@@ -458,8 +465,8 @@
 .history-chat-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-height: 320px;
+  gap: 8px;
+  max-height: 220px;
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -493,7 +500,7 @@
 
 /* ── Summary Modal ──────────────────────────────────────────── */
 .history-summary-modal {
-  width: min(1020px, 100%);
+  width: min(1100px, 96vw);
   padding: 0;
   overflow: hidden;
   display: flex;
@@ -588,7 +595,7 @@
 
 .history-modal-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
+  grid-template-columns: minmax(0, 1fr) 360px;
   overflow: hidden;
   flex: 1;
   min-height: 0;
@@ -626,6 +633,8 @@
 .history-modal-card--full .history-transcript-text,
 .history-modal-card--full .history-modal-text {
   flex: 1;
+  max-height: none;
+  overflow-y: auto;
 }
 
 .history-modal-card-title {

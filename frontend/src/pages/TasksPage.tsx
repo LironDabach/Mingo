@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Header from '../components/Header/Header';
 import { fetchWithAuth, getStoredUser, parseResponseBody } from '../lib/auth';
+import { TASKS_CHANGED_EVENT, TASKS_CHANGED_STORAGE_KEY } from '../lib/taskEvents';
 import './TasksPage.css';
 
 type TaskStatus = 'To Do' | 'Done';
@@ -230,6 +231,23 @@ const TasksPage = () => {
 
   useEffect(() => { void loadRepos(); }, [currentUser?._id]);
   useEffect(() => { void loadTasks(selectedRepoName); }, [currentUser?._id, selectedRepoName]);
+  useEffect(() => {
+    const refreshTasks = () => {
+      void loadTasks(selectedRepoName, true);
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === TASKS_CHANGED_STORAGE_KEY) {
+        refreshTasks();
+      }
+    };
+
+    window.addEventListener(TASKS_CHANGED_EVENT, refreshTasks);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener(TASKS_CHANGED_EVENT, refreshTasks);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [currentUser?._id, selectedRepoName]);
 
   const assignees = useMemo(() => {
     const set = new Set(tasks.map((task) => task.assignee));
