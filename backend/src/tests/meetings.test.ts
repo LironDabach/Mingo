@@ -67,8 +67,10 @@ beforeAll(async () => {
   const seededMeetings = await meetingsModel.create([
     {
       title: "Planning Sync",
-      date: new Date("2026-03-20T09:00:00.000Z"),
+      date: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
       duration: 45,
+      status: "completed",
+      endedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000 + 45 * 60 * 1000),
       organizerId: userId,
       participants: [userId, otherUserId],
       transcriptId: new mongoose.Types.ObjectId(),
@@ -76,8 +78,10 @@ beforeAll(async () => {
     },
     {
       title: "Retrospective",
-      date: new Date("2026-03-20T11:00:00.000Z"),
+      date: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000),
       duration: 30,
+      status: "completed",
+      endedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000 + 30 * 60 * 1000),
       organizerId: otherUserId,
       participants: [otherUserId],
       transcriptId: new mongoose.Types.ObjectId(),
@@ -87,6 +91,7 @@ beforeAll(async () => {
       title: "Upcoming Review",
       date: new Date(Date.now() + 24 * 60 * 60 * 1000),
       duration: 90,
+      status: "upcoming",
       organizerId: otherUserId,
       participants: [userId, otherUserId],
       transcriptId: new mongoose.Types.ObjectId(),
@@ -96,6 +101,8 @@ beforeAll(async () => {
       title: "Quarterly Kickoff",
       date: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000),
       duration: 120,
+      status: "completed",
+      endedAt: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000 + 120 * 60 * 1000),
       organizerId: userId,
       participants: [userId],
       transcriptId: new mongoose.Types.ObjectId(),
@@ -104,6 +111,8 @@ beforeAll(async () => {
     {
       title: "No Duration Meeting",
       date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+      status: "completed",
+      endedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 + 30 * 60 * 1000),
       organizerId: userId,
       participants: [userId],
       transcriptId: new mongoose.Types.ObjectId(),
@@ -313,6 +322,7 @@ describe("Meetings API", () => {
         organizerId: userId,
         participants: [userId],
         transcriptId: new mongoose.Types.ObjectId().toString(),
+        gitHubRepoName: "design-review",
         tasks: [new mongoose.Types.ObjectId().toString()],
       });
 
@@ -325,11 +335,14 @@ describe("Meetings API", () => {
         .set("Authorization", `Bearer ${authToken}`)
         .send({
           title: "Design Review",
-          date: "2026-03-21T09:00:00.000Z",
+          date: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
           duration: 60,
+          status: "completed",
+          endedAt: new Date().toISOString(),
           organizerId: userId,
           participants: [userId, otherUserId],
           transcriptId: new mongoose.Types.ObjectId().toString(),
+          gitHubRepoName: "design-review",
           tasks: [new mongoose.Types.ObjectId().toString()],
         });
 
@@ -337,7 +350,6 @@ describe("Meetings API", () => {
       expect(response.body._id).toBeDefined();
       expect(response.body.title).toBe("Design Review");
       expect(response.body.organizerId).toBe(userId);
-      expect(response.body.participants).toEqual([userId, otherUserId]);
       expect(response.body.tasks).toHaveLength(1);
       expect(mongoose.isValidObjectId(response.body.tasks[0])).toBe(true);
 
@@ -346,6 +358,10 @@ describe("Meetings API", () => {
       const savedMeeting = await meetingsModel.findById(response.body._id);
       expect(savedMeeting).not.toBeNull();
       expect(savedMeeting?.title).toBe("Design Review");
+      expect(savedMeeting?.participants.map((id) => id.toString())).toEqual([
+        userId,
+        otherUserId,
+      ]);
     });
   });
 

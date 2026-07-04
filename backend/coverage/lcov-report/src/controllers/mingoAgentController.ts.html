@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">70% </span>
+                <span class="strong">71.87% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>28/40</span>
+                <span class='fraction'>23/32</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">66.66% </span>
+                <span class="strong">64.28% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>8/12</span>
+                <span class='fraction'>9/14</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>5/5</span>
+                <span class='fraction'>4/4</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">70% </span>
+                <span class="strong">71.87% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>28/40</span>
+                <span class='fraction'>23/32</span>
             </div>
         
             
@@ -141,19 +141,7 @@
 <a name='L76'></a><a href='#L76'>76</a>
 <a name='L77'></a><a href='#L77'>77</a>
 <a name='L78'></a><a href='#L78'>78</a>
-<a name='L79'></a><a href='#L79'>79</a>
-<a name='L80'></a><a href='#L80'>80</a>
-<a name='L81'></a><a href='#L81'>81</a>
-<a name='L82'></a><a href='#L82'>82</a>
-<a name='L83'></a><a href='#L83'>83</a>
-<a name='L84'></a><a href='#L84'>84</a>
-<a name='L85'></a><a href='#L85'>85</a>
-<a name='L86'></a><a href='#L86'>86</a>
-<a name='L87'></a><a href='#L87'>87</a>
-<a name='L88'></a><a href='#L88'>88</a>
-<a name='L89'></a><a href='#L89'>89</a>
-<a name='L90'></a><a href='#L90'>90</a>
-<a name='L91'></a><a href='#L91'>91</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L79'></a><a href='#L79'>79</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">7x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">7x</span>
@@ -200,24 +188,12 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -271,7 +247,7 @@ class mingoAgentController extends baseController {
 &nbsp;
   async generateReply(req: AuthRequest, res: Response) {
     const meetingId = req.params.meetingId;
-    const { message } = req.body;
+    const { message, transcript } = req.body;
 &nbsp;
     <span class="missing-if-branch" title="if path not taken" >I</span>if (!meetingId) {
 <span class="cstat-no" title="statement not covered" >      return res.status(400).json({ error: "Meeting ID is required" });</span>
@@ -289,8 +265,13 @@ class mingoAgentController extends baseController {
         meetingId,
         message,
         req.user?._id,
+        typeof transcript === "string" ? <span class="branch-0 cbranch-no" title="branch not covered" >transcript </span>: undefined,
       );
-      res.json({ reply: result.reply });
+      res.json({
+        reply: result.reply,
+        taskActionPerformed: result.taskActionPerformed,
+        ...(result.suggestedTask ? <span class="branch-0 cbranch-no" title="branch not covered" >{ suggestedTask: result.suggestedTask } </span>: {}),
+      });
     } catch (err) {
 <span class="cstat-no" title="statement not covered" >      console.error(err);</span>
 <span class="cstat-no" title="statement not covered" >      res.status(500).send("Error: Can't generate reply for the meeting");</span>
@@ -313,23 +294,6 @@ class mingoAgentController extends baseController {
 <span class="cstat-no" title="statement not covered" >      res.status(500).send("Error: Can't generate summary for the meeting");</span>
     }
   }
-&nbsp;
-  // Generate topics for the meeting
-  async generateTopics(req: AuthRequest, res: Response) {
-    const meetingId = req.params.meetingId;
-&nbsp;
-    <span class="missing-if-branch" title="if path not taken" >I</span>if (!meetingId) {
-<span class="cstat-no" title="statement not covered" >      return res.status(400).json({ error: "Meeting ID is required" });</span>
-    }
-&nbsp;
-    try {
-      const result = await mingoAgentService.generateTopics(meetingId);
-      res.json({ topics: result.topics });
-    } catch (err) {
-<span class="cstat-no" title="statement not covered" >      console.error(err);</span>
-<span class="cstat-no" title="statement not covered" >      res.status(500).send("Error: Can't generate topics for the meeting");</span>
-    }
-  }
 }
 &nbsp;
 export default new mingoAgentController();
@@ -340,7 +304,7 @@ export default new mingoAgentController();
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-03-22T21:55:04.298Z
+                at 2026-07-04T06:00:03.082Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

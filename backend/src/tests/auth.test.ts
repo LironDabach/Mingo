@@ -94,26 +94,25 @@ describe("Auth API", () => {
   describe("POST /api/auth/register", () => {
     test("returns 400 when required fields are missing", async () => {
       const response = await request(app).post("/api/auth/register").send({
-        username: "onlyusername",
+        email: "missing-password@example.com",
       });
 
       expect(response.status).toBe(400);
-      expect(response.body.message).toBe(
-        "Username, email and password are required",
-      );
+      expect(response.body.message).toBe("Email and password are required");
     });
 
-    test("returns 400 when username format is invalid", async () => {
+    test("sanitizes the generated username from the email prefix", async () => {
+      const email = `invalid name_${Date.now()}@example.com`;
       const response = await request(app).post("/api/auth/register").send({
-        username: "invalid name",
-        email: "invalid-name@example.com",
+        email,
         password: "Pass1234!",
       });
 
-      expect(response.status).toBe(400);
-      expect(response.body.message).toBe(
-        "Username can only contain English letters, numbers, dots, underscores, and hyphens",
-      );
+      expect(response.status).toBe(201);
+      expect(response.body.user.username).toMatch(/^invalidname_/);
+      expect(response.body.user.email).toBe(email);
+
+      createdUserIds.push(response.body.user._id);
     });
 
     test("registers a new user", async () => {
@@ -156,35 +155,35 @@ describe("Auth API", () => {
       expect(response.body.message).toBe("Email already exists");
     });
 
-    test("returns 400 when username already exists", async () => {
+    test("generates a unique username when the email prefix already exists", async () => {
       const existingUser = await usersModel.findById(existingUserId);
 
       const response = await request(app).post("/api/auth/register").send({
-        username: existingUser!.username,
-        email: `duplicate_username_${Date.now()}@example.com`,
+        email: `${existingUser!.username}@different-example.com`,
         password: "Pass1234!",
       });
 
-      expect(response.status).toBe(400);
-      expect(response.body.message).toBe("Username already exists");
+      expect(response.status).toBe(201);
+      expect(response.body.user.username).toBe(`${existingUser!.username}1`);
+      createdUserIds.push(response.body.user._id);
     });
   });
 
   describe("POST /api/auth/login", () => {
     test("returns 400 when required fields are missing", async () => {
       const response = await request(app).post("/api/auth/login").send({
-        username: "missing-password",
+        email: "missing-password@example.com",
       });
 
       expect(response.status).toBe(400);
-      expect(response.body.message).toBe("Username and password are required");
+      expect(response.body.message).toBe("Email and password are required");
     });
 
     test("logs in an existing user", async () => {
       const existingUser = await usersModel.findById(existingUserId);
 
       const response = await request(app).post("/api/auth/login").send({
-        username: existingUser!.username,
+        email: existingUser!.email,
         password: "Pass1234!",
       });
 
@@ -199,33 +198,33 @@ describe("Auth API", () => {
       expect(savedUser?.refreshTokens).toContain(response.body.refreshToken);
     });
 
-    test("returns 401 when the username does not exist", async () => {
+    test("returns 401 when the email does not exist", async () => {
       const response = await request(app).post("/api/auth/login").send({
-        username: `missing_user_${Date.now()}`,
+        email: `missing_user_${Date.now()}@example.com`,
         password: "Pass1234!",
       });
 
       expect(response.status).toBe(401);
-      expect(response.body.message).toBe("Invalid username or password");
+      expect(response.body.message).toBe("Invalid email or password");
     });
 
     test("returns 401 for invalid credentials", async () => {
       const existingUser = await usersModel.findById(existingUserId);
 
       const response = await request(app).post("/api/auth/login").send({
-        username: existingUser!.username,
+        email: existingUser!.email,
         password: "wrong-password",
       });
 
       expect(response.status).toBe(401);
-      expect(response.body.message).toBe("Invalid username or password");
+      expect(response.body.message).toBe("Invalid email or password");
     });
 
     test("returns 401 when password login is attempted for a github user", async () => {
       const githubUser = await usersModel.findById(githubUserId);
 
       const response = await request(app).post("/api/auth/login").send({
-        username: githubUser!.username,
+        email: githubUser!.email,
         password: "Pass1234!",
       });
 
@@ -452,7 +451,8 @@ describe("Auth API", () => {
 
       const savedUser = await usersModel.findById(existingUserId);
       expect(savedUser?.googleId).toBe(googleSub);
-      expect(savedUser?.email).toBe(googleEmail);
+      expect(savedUser?.email).not.toBe(googleEmail);
+      expect(savedUser?.email).toContain("auth_existing_");
     });
   });
 
