@@ -3,7 +3,7 @@ module.exports = {
     {
       name: "mingo-backend",
       script: "dist/server.js",
-      cwd: "/home/node57/Mingo/backend",
+      cwd: "/home/cs105/Mingo/backend",
       instances: 1,
       exec_mode: "fork",
       env: {
