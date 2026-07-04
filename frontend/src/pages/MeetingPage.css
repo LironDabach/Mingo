@@ -803,6 +803,13 @@
   height: 15px;
 }
 
+.meeting-message__avatar img {
+  width: 18px;
+  height: 18px;
+  display: block;
+  object-fit: contain;
+}
+
 .meeting-message__avatar--user {
   background: #f1f5f9;
   color: #64748b;

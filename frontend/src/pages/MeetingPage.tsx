@@ -13,6 +13,11 @@ type DraftAttendee = {
   isRegistered: boolean;
 };
 
+type MeetingParticipant = Partial<DraftAttendee> & {
+  fullname?: string;
+  username?: string;
+};
+
 type MeetingDraft = {
   id?: string;
   title?: string;
@@ -26,6 +31,7 @@ type MeetingDetails = {
   title?: string;
   date?: string;
   gitHubRepoName?: string;
+  participants?: MeetingParticipant[];
 };
 
 type ChatMessage = {
@@ -72,6 +78,17 @@ const formatMeetingDate = (value?: string) => {
   }).format(date);
 };
 
+const getAttendeeKey = (attendee: DraftAttendee) =>
+  (attendee.email || attendee.displayName).trim().toLowerCase();
+
+const uniqueAttendees = (attendees: DraftAttendee[]) =>
+  attendees.filter((attendee, index, array) => {
+    const key = getAttendeeKey(attendee);
+    if (!key) return false;
+
+    return array.findIndex((candidate) => getAttendeeKey(candidate) === key) === index;
+  });
+
 const buildMeetingNarrative = (
   title: string,
   repo: string,
@@ -94,19 +111,33 @@ const MeetingPage = () => {
     '';
   const meetingIdRef = useRef(initialMeetingId);
 
-  const attendees = useMemo(() => {
-    const draftAttendees = parsedDraft?.attendees || [];
-    const currentUserName = storedUser?.fullname || storedUser?.email || 'You';
-    const merged = [{ displayName: currentUserName, email: storedUser?.email || '', isRegistered: true }, ...draftAttendees];
-
-    return merged.filter(
-      (attendee, index, array) =>
-        array.findIndex((candidate) => candidate.email === attendee.email) === index,
-    );
-  }, [parsedDraft?.attendees, storedUser?.email, storedUser?.fullname]);
-
   const [actualDuration, setActualDuration] = useState('');
   const [meetingDetails, setMeetingDetails] = useState<MeetingDetails | null>(null);
+  const attendees = useMemo(() => {
+    if (Array.isArray(meetingDetails?.participants) && meetingDetails.participants.length > 0) {
+      return uniqueAttendees(
+        meetingDetails.participants.map((participant) => ({
+          email: participant.email || '',
+          displayName:
+            participant.displayName ||
+            participant.fullname ||
+            participant.username ||
+            participant.email ||
+            'Participant',
+          isRegistered: true,
+        })),
+      );
+    }
+
+    const draftAttendees = parsedDraft?.attendees || [];
+    const currentUserName = storedUser?.fullname || storedUser?.email || 'You';
+    const merged = [
+      { displayName: currentUserName, email: storedUser?.email || '', isRegistered: true },
+      ...draftAttendees,
+    ];
+
+    return uniqueAttendees(merged);
+  }, [meetingDetails?.participants, parsedDraft?.attendees, storedUser?.email, storedUser?.fullname]);
   const meetingTitle = meetingDetails?.title || parsedDraft?.title || 'Live Meeting';
   const repositoryLabel = meetingDetails?.gitHubRepoName || parsedDraft?.gitHubRepoName || '';
   const meetingDate = formatMeetingDate(meetingDetails?.date || parsedDraft?.date);
@@ -812,9 +843,7 @@ const MeetingPage = () => {
                   <div className="meeting-message__bubble">{message.text}</div>
                   {message.sender === 'mingo' && (
                     <div className="meeting-message__avatar meeting-message__avatar--mingo">
-                      <svg viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 2a8 8 0 0 0-8 8v3.6c0 .7-.3 1.3-.8 1.7L2 16.5V18h20v-1.5l-1.2-1.2c-.5-.5-.8-1.1-.8-1.7V10a8 8 0 0 0-8-8Zm-3 7h6v2H9V9Zm0 4h4v2H9v-2Z" />
-                      </svg>
+                      <img src="/mingo-mark.svg" alt="" aria-hidden="true" />
                     </div>
                   )}
                 </div>
@@ -827,9 +856,7 @@ const MeetingPage = () => {
                     <span></span>
                   </div>
                   <div className="meeting-message__avatar meeting-message__avatar--mingo">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 2a8 8 0 0 0-8 8v3.6c0 .7-.3 1.3-.8 1.7L2 16.5V18h20v-1.5l-1.2-1.2c-.5-.5-.8-1.1-.8-1.7V10a8 8 0 0 0-8-8Zm-3 7h6v2H9V9Zm0 4h4v2H9v-2Z" />
-                    </svg>
+                    <img src="/mingo-mark.svg" alt="" aria-hidden="true" />
                   </div>
                 </div>
               )}

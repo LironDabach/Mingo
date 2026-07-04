@@ -6,9 +6,10 @@ import dotenv from "dotenv";
 import path from "path";
 
 const isProduction = process.env.NODE_ENV === "production";
+const projectRoot = path.resolve(__dirname, "../..");
 const envPath = path.resolve(
-  __dirname,
-  isProduction ? "../.env" : "../.env.development",
+  projectRoot,
+  isProduction ? ".env.production" : ".env.development",
 );
 
 dotenv.config({ path: envPath });
@@ -26,16 +27,17 @@ initApp()
       return;
     }
 
-    // console.log("Production Environment");
+    console.log("Production Environment");
 
-    // const httpsOptions = {
-    //   key: fs.readFileSync("../client-key.pem"),
-    //   cert: fs.readFileSync("../client-cert.pem"),
-    // };
+    const httpsOptions = {
+      key: fs.readFileSync("../client-key.pem"),
+      cert: fs.readFileSync("../client-cert.pem"),
+    };
 
-    // https.createServer(httpsOptions, app).listen(httpsPort, () => {
-    //   console.log(`Listening on HTTPS port ${httpsPort}`);
-    // });
+    https.createServer(httpsOptions, app).listen(httpsPort, () => {
+      console.log(`Listening on HTTPS port ${httpsPort}`);
+    });
+    
   })
   .catch((error) => {
     console.error("Failed to initialize app:", error);

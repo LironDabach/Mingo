@@ -4,6 +4,7 @@ import request from "supertest";
 import initApp from "../index";
 import meetingsModel from "../models/meetingsModel";
 import tasksModel from "../models/tasksModel";
+import usersModel from "../models/usersModel";
 import { Express } from "express";
 import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
@@ -16,12 +17,15 @@ let otherAuthToken: string;
 let jwtSecret: string;
 const userId = new mongoose.Types.ObjectId().toString();
 const otherUserId = new mongoose.Types.ObjectId().toString();
+const connectedUserId = new mongoose.Types.ObjectId().toString();
 const createdMeetingIds: string[] = [];
 const createdTaskIds: string[] = [];
+const createdUserIds: string[] = [];
 let meetingWithTasksId: string;
 let otherMeetingId: string;
 let taskOneId: string;
 let taskTwoId: string;
+let connectedAuthToken: string;
 
 beforeAll(async () => {
   dotenv.config({
@@ -37,6 +41,17 @@ beforeAll(async () => {
   app = await initApp();
   authToken = jwt.sign({ _id: userId }, jwtSecret, { expiresIn: "1h" });
   otherAuthToken = jwt.sign({ _id: otherUserId }, jwtSecret, { expiresIn: "1h" });
+  connectedAuthToken = jwt.sign({ _id: connectedUserId }, jwtSecret, { expiresIn: "1h" });
+
+  const connectedUser = await usersModel.create({
+    _id: connectedUserId,
+    username: `tasks-gh-${Date.now()}`,
+    fullname: "Tasks GitHub User",
+    email: `tasks-gh-${Date.now()}@example.com`,
+    githubAccessToken: "github-token",
+    githubTokenType: "token",
+  });
+  createdUserIds.push(connectedUser._id.toString());
 
   const createdTasks = await tasksModel.create([
     {
@@ -88,6 +103,10 @@ afterAll(async () => {
 
   if (createdTaskIds.length > 0) {
     await tasksModel.deleteMany({ _id: { $in: createdTaskIds } });
+  }
+
+  if (createdUserIds.length > 0) {
+    await usersModel.deleteMany({ _id: { $in: createdUserIds } });
   }
 
   await mongoose.connection.close();
@@ -190,6 +209,66 @@ describe("Tasks API", () => {
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual([]);
+    });
+
+    test("loads issues from all GitHub repositories when no repo filter is selected", async () => {
+      const fetchMock = jest.spyOn(global, "fetch" as any).mockImplementation((url: unknown) => {
+        const requestUrl = String(url);
+
+        if (requestUrl === "https://api.github.com/user/repos?sort=updated&per_page=100") {
+          return Promise.resolve({
+            ok: true,
+            json: async () => [
+              { id: 1, name: "Aura", full_name: "LironDabach/Aura" },
+              { id: 2, name: "Mingo", full_name: "LironDabach/Mingo" },
+            ],
+          } as Response);
+        }
+
+        if (requestUrl === "https://api.github.com/repos/LironDabach/Aura/issues?state=all&per_page=100&sort=updated") {
+          return Promise.resolve({
+            ok: true,
+            json: async () => [
+              {
+                id: 101,
+                number: 74,
+                title: "Enable HTTPS deployment",
+                state: "open",
+                html_url: "https://github.com/LironDabach/Aura/issues/74",
+              },
+            ],
+          } as Response);
+        }
+
+        if (requestUrl === "https://api.github.com/repos/LironDabach/Mingo/issues?state=all&per_page=100&sort=updated") {
+          return Promise.resolve({
+            ok: true,
+            json: async () => [
+              {
+                id: 201,
+                number: 12,
+                title: "Fix repo filter",
+                state: "open",
+                html_url: "https://github.com/LironDabach/Mingo/issues/12",
+              },
+            ],
+          } as Response);
+        }
+
+        return Promise.resolve({ ok: false, json: async () => ({}) } as Response);
+      });
+
+      const response = await request(app)
+        .get(`/api/users/${connectedUserId}/tasks`)
+        .set("Authorization", `Bearer ${connectedAuthToken}`);
+
+      fetchMock.mockRestore();
+
+      expect(response.status).toBe(200);
+      expect(response.body.map((task: { gitHubRepoName: string }) => task.gitHubRepoName).sort()).toEqual([
+        "LironDabach/Aura",
+        "LironDabach/Mingo",
+      ]);
     });
   });
 

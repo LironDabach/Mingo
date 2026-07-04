@@ -503,7 +503,7 @@ const TasksPage = () => {
 
           {repos.length > 0 && (
             <select
-              className="tasks-control-select"
+              className="tasks-control-select tasks-repo-select"
               value={selectedRepoName}
               onChange={(e) => setSelectedRepoName(e.target.value)}
               disabled={isLoadingRepos}

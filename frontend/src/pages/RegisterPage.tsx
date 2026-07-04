@@ -93,7 +93,7 @@ const RegisterPage = () => {
     <div className="auth-container">
       <div className="auth-brand">
         <div className="auth-brand-shell">
-          <div className="auth-brand-logo">Mingo</div>
+          <img src="/logo.svg" alt="Mingo" className="auth-brand-logo-img" />
           <div className="auth-brand-tagline">Manage your meetings smarter</div>
         </div>
       </div>
@@ -114,31 +114,31 @@ const RegisterPage = () => {
                 <label htmlFor="fullname">
                   Full Name <span className="required">*</span>
                 </label>
-              <input
-                id="fullname"
-                type="text"
-                placeholder="Full Name"
-                value={fullname}
-                onChange={(e) => setFullname(e.target.value)}
-                autoComplete="name"
-                required
+                <input
+                  id="fullname"
+                  type="text"
+                  placeholder="Full Name"
+                  value={fullname}
+                  onChange={(e) => setFullname(e.target.value)}
+                  autoComplete="name"
+                  required
                 />
               </div>
 
-            <div className="auth-field">
-              <label htmlFor="email">
-                Email <span className="required">*</span>
-              </label>
-              <input
-                id="email"
-                type="email"
-                placeholder="ex: jon.smith@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
-                required
-              />
-            </div>
+              <div className="auth-field">
+                <label htmlFor="email">
+                  Email <span className="required">*</span>
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  placeholder="ex: jon.smith@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
+                  required
+                />
+              </div>
 
               <div className="auth-field">
                 <label htmlFor="password">

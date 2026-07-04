@@ -1,41 +1,47 @@
 .auth-container {
   display: flex;
   min-height: 100vh;
+  min-height: 100dvh;
   background: #f8fafc;
 }
 
 .auth-brand {
-  flex: 1;
+  flex: 0 0 48%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  padding: 48px;
-  background: linear-gradient(145deg, #6366f1, #4f46e5, #4338ca);
+  padding: 48px clamp(24px, 3vw, 48px);
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.16), transparent 28%),
+    linear-gradient(145deg, #6366f1 0%, #4f46e5 52%, #4338ca 100%);
 }
 
 .auth-brand-shell {
   width: 100%;
-  max-width: 520px;
+  max-width: 620px;
   text-align: center;
 }
 
 .auth-brand-logo-img {
-  width: 100%;
-  max-width: 980px;
+  width: min(100%, 360px);
+  max-height: 126px;
   height: auto;
   display: block;
   margin: 0 auto;
+  object-fit: contain;
 }
 
 .auth-brand-tagline {
-  font-family: Comfortaa;
-  margin-top: 24px;
-  font-size: 22px;
-  font-weight: 100;
-  letter-spacing: 0.01em;
-  opacity: 0.88;
-  line-height: 1.5;
+  margin-top: 28px;
+  font-size: clamp(22px, 2vw, 28px);
+  font-family: "Comfortaa", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-weight: 500;
+  letter-spacing: 0;
+  opacity: 0.92;
+  line-height: 1.35;
+  white-space: nowrap;
 }
 
 .auth-form-panel {
@@ -44,18 +50,18 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 48px 40px;
+  padding: 48px clamp(24px, 5vw, 72px);
   background: #f8fafc;
 }
 
 .auth-form-shell {
   width: 100%;
-  max-width: 440px;
-  padding: 36px 40px 32px;
-  border-radius: 20px;
+  max-width: 460px;
+  padding: 40px 42px 34px;
+  border-radius: 18px;
   background: #fff;
   border: 1px solid #e2e8f0;
-  box-shadow: 0 8px 32px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 24px 56px rgba(15, 23, 42, 0.08);
   position: relative;
 }
 
@@ -68,12 +74,12 @@
 }
 
 .auth-form-wrapper h1 {
-  font-size: 42px;
+  font-size: 40px;
   font-weight: 800;
   color: #0f172a;
-  margin: 0 0 32px;
-  line-height: 1;
-  letter-spacing: -0.05em;
+  margin: 0 0 30px;
+  line-height: 1.08;
+  letter-spacing: 0;
 }
 
 .auth-back-link {
@@ -111,7 +117,8 @@
 
 .auth-field input {
   width: 100%;
-  padding: 12px 14px;
+  height: 52px;
+  padding: 0 16px;
   font-size: 14px;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
@@ -133,7 +140,8 @@
 
 .auth-submit-btn {
   width: 100%;
-  padding: 12px 0;
+  min-height: 52px;
+  padding: 0 18px;
   font-size: 14px;
   font-weight: 700;
   color: #fff;
@@ -165,7 +173,8 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  padding: 12px 0;
+  min-height: 52px;
+  padding: 0 18px;
   font-size: 14px;
   font-weight: 600;
   color: #0f172a;
@@ -232,9 +241,9 @@
   }
 
   .auth-brand {
-    min-height: 240px;
+    min-height: 220px;
     flex: none;
-    padding: 32px 24px;
+    padding: 32px 24px 28px;
   }
 
   .auth-form-panel {
@@ -248,12 +257,67 @@
   }
 
   .auth-brand-logo-img {
-    width: 60%;
-    max-width: 280px;
+    width: min(72%, 280px);
+    max-height: 98px;
   }
 
   .auth-form-wrapper h1 {
-    font-size: 36px;
+    font-size: 34px;
     margin-bottom: 28px;
+  }
+
+  .auth-brand-tagline {
+    margin-top: 20px;
+    font-size: clamp(18px, 5vw, 22px);
+  }
+}
+
+@media (max-width: 420px) {
+  .auth-brand {
+    min-height: 190px;
+  }
+
+  .auth-form-panel {
+    padding: 24px 14px 36px;
+  }
+
+  .auth-form-shell {
+    padding: 24px 18px 22px;
+  }
+
+  .auth-brand-tagline {
+    font-size: clamp(15px, 4.6vw, 18px);
+  }
+
+  .auth-field input,
+  .auth-submit-btn,
+  .auth-google-btn {
+    min-height: 48px;
+  }
+
+  .auth-field input {
+    height: 48px;
+  }
+}
+
+@media (max-height: 760px) and (min-width: 769px) {
+  .auth-brand-logo-img {
+    width: min(78%, 320px);
+    max-height: 108px;
+  }
+
+  .auth-brand-tagline {
+    margin-top: 22px;
+    font-size: 24px;
+  }
+
+  .auth-form-panel {
+    padding-top: 28px;
+    padding-bottom: 28px;
+  }
+
+  .auth-form-shell {
+    padding-top: 30px;
+    padding-bottom: 28px;
   }
 }

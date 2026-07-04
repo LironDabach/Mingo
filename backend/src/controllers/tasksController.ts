@@ -523,55 +523,6 @@ class tasksController extends baseController {
       return [];
     }
 
-    const normalizedUserId = mongoose.Types.ObjectId.isValid(userId)
-      ? new mongoose.Types.ObjectId(userId)
-      : userId;
-
-    const meetings = await meetingsModel
-      .find({
-        $or: [
-          { organizerId: normalizedUserId },
-          { participants: normalizedUserId },
-        ],
-      })
-      .sort({ date: -1 });
-
-    let sourceRepoNames: string[];
-
-    if (requestedRepoNames.length > 0) {
-      sourceRepoNames = requestedRepoNames;
-    } else {
-      // Discover repos from meeting gitHubRepoName fields
-      const meetingRepos = meetings
-        .map((m) => m.gitHubRepoName)
-        .filter((r): r is string => typeof r === "string" && r.trim() !== "");
-
-      // Also discover repos from tasks saved in those meetings
-      const meetingIds = meetings.map((m) => m._id);
-      const taskRepoRows = await meetingsModel.aggregate<{ _id: string }>([
-        { $match: { _id: { $in: meetingIds } } },
-        { $lookup: { from: "tasks", localField: "tasks", foreignField: "_id", as: "taskDocs" } },
-        { $unwind: { path: "$taskDocs", preserveNullAndEmptyArrays: false } },
-        {
-          $match: {
-            "taskDocs.gitHubRepoName": { $type: "string", $ne: "" },
-          },
-        },
-        { $group: { _id: "$taskDocs.gitHubRepoName" } },
-      ]);
-      const taskRepos = taskRepoRows.map((r) => r._id).filter(Boolean);
-
-      sourceRepoNames = [...meetingRepos, ...taskRepos];
-    }
-
-    const repoNames = Array.from(
-      new Set(sourceRepoNames.map((r) => this.normalizeRepoName(r))),
-    ).filter(Boolean);
-
-    if (repoNames.length === 0) {
-      return [];
-    }
-
     const repos = await this.fetchGitHubJson<
       Array<{
         id: number;
@@ -591,9 +542,14 @@ class tasksController extends baseController {
       repoByName.set(this.normalizeRepoName(repo.full_name), repo);
     });
 
-    const matchedRepos = repoNames
-      .map((repoName) => repoByName.get(repoName))
-      .filter((repo): repo is { id: number; name: string; full_name: string } => Boolean(repo));
+    const matchedRepos =
+      requestedRepoNames.length > 0
+        ? Array.from(
+            new Set(requestedRepoNames.map((repoName) => this.normalizeRepoName(repoName))),
+          )
+            .map((repoName) => repoByName.get(repoName))
+            .filter((repo): repo is { id: number; name: string; full_name: string } => Boolean(repo))
+        : repos;
 
     const issueGroups = await Promise.all(
       matchedRepos.map(async (repo) => {
@@ -982,6 +938,12 @@ class tasksController extends baseController {
         typeof req.query.project === "string" ? req.query.project : "";
       const projectRef = this.parseGitHubProjectUrl(projectQuery);
       const authorization = this.getGitHubAuthorization(await usersModel.findById(userId));
+
+      if (!authorization && requestedRepoNames.length === 0 && !projectRef) {
+        const dbTasks = await this.model.find({ gitHubRepoOwner: userId });
+        return res.json(dbTasks);
+      }
+
       const githubCacheKey = `${userId}:${
         requestedRepoNames.length > 0
           ? `repo:${requestedRepoNames.map((repoName) => this.normalizeRepoName(repoName)).join(",")}`
