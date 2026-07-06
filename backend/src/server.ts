@@ -30,8 +30,8 @@ initApp()
     console.log("Production Environment");
 
     const httpsOptions = {
-      key: fs.readFileSync("../client-key.pem"),
-      cert: fs.readFileSync("../client-cert.pem"),
+      key: fs.readFileSync(path.resolve(projectRoot, "backend/client-key.pem")),
+      cert: fs.readFileSync(path.resolve(projectRoot, "backend/client-cert.pem")),
     };
 
     https.createServer(httpsOptions, app).listen(httpsPort, () => {
